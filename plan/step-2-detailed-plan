@@ -1,6 +1,6 @@
-Sure—below is the concrete high-level + technical spec for step 2 (Signal transport) and step 2b (stdout mirror while running in Signal mode).
+Sure - below is the rebuilt high-level + technical spec for step 2 (Telegram transport) and step 2b (stdout mirror while running in Telegram mode).
 
-Assumption: we keep the current TypeScript/Node.js core; Signal becomes a transport adapter, not a new agent.
+Assumption: we keep the current TypeScript/Node.js core; Telegram is a transport adapter, not a new agent.
 
 ---
 
@@ -8,39 +8,43 @@ Assumption: we keep the current TypeScript/Node.js core; Signal becomes a transp
 
 The system must:
 
-* handle inbound Signal messages
-* reply to Signal through a local REST wrapper
+* handle inbound Telegram messages sent to the bot
+* reply through Telegram Bot API
 * run every accepted message through the same pipeline:
 
   * Main Agent
   * trace persistence
   * Meta Agent
   * proposed config
-* accept messages only from one explicitly configured phone number
-* when running in `signal` mode, also print the entire conversation to stdout
+* accept messages only from one explicitly configured Telegram user/chat
+* when running in `telegram` mode, also print the entire conversation to stdout
 
-Treat stdout as **step 2b**—a simple observability/debug channel.
+Treat stdout as **step 2b** - a simple observability/debug channel.
 
 ---
 
 # Practical Technical Assumption
 
-Signal does not offer an official bot/API flow suitable for this integration, so the pragmatic option is:
+Telegram offers an official, stable HTTP Bot API, so integration should be simpler than Signal.
 
-* `signal-cli`
-* the `signal-cli-rest-api` wrapper
+For this local-agent project the pragmatic default is:
 
-The most sensible modes for this project are:
+* long polling (`getUpdates`) in the agent process
 
-* `json-rpc`
-* `native`
+Why polling first:
 
-This remains an **unofficial integration**, but it fits a local agent.
+* no public HTTPS endpoint required
+* no reverse proxy/ngrok dependency
+* runs fully local while you chat from your phone app
+
+Optional future mode:
+
+* webhook (for production/self-hosted deployments)
 
 Important reminders:
 
-* device onboarding/linking can be fragile
-* do not aim for “zero-config” in step 2
+* persist update offsets to avoid duplicates on restart
+* constrain accepted message sources to one allowed chat/user for step 2
 * ship setup + health-check documentation
 
 ---
@@ -49,10 +53,11 @@ Important reminders:
 
 * Node.js
 * TypeScript
-* existing agent core (no architectural changes)
-* `fetch` for talking to `signal-cli-rest-api`
-* optionally a small HTTP server (e.g. `express`)
-* `zod` for webhook/REST payload validation
+* existing agent core (no architectural rewrite)
+* `fetch` for Telegram Bot API calls
+* `zod` for update parsing/validation
+
+No extra framework is required for polling mode.
 
 ---
 
@@ -60,64 +65,65 @@ Important reminders:
 
 ## Step 2
 
-1. App boots in `signal` mode.
-2. Listens for inbound Signal messages.
-3. Checks the sender.
-4. If sender ≠ allowed number:
+1. App boots in `telegram` mode.
+2. Starts a polling loop against Telegram Bot API.
+3. Parses incoming updates.
+4. Validates source (chat/user).
+5. If source is not allowed:
 
    * ignore the message
-   * log the rejection
-5. If sender == allowed number:
+   * log rejection
+6. If source is allowed:
 
    * map/create a session
    * run the agent pipeline
-   * send the reply back to Signal
+   * send reply via Telegram
    * persist trace/evaluation as before
 
 ## Step 2b
 
-When running in `signal` mode, stdout shows:
+When running in `telegram` mode, stdout shows:
 
 * inbound message
 * outbound answer
 * trace id
 * meta score / issues
 
-CLI is no longer for typing prompts; it becomes the local runtime log.
+CLI is no longer for typing prompts; it becomes local runtime logs in transport mode.
 
 ---
 
 # Project Structure After Step 2
 
 ```text
-agent-system/
+local-agent/
   src/
     index.ts
 
     app/
       run-cli.ts
-      run-signal.ts
+      run-telegram.ts
 
     core/
       process-user-turn.ts
       session-store.ts
+      telegram-offset-store.ts
       ...
 
     transport/
-      types.ts
-      signal/
-        signal-client.ts
-        signal-webhook.ts
-        signal-dispatcher.ts
-        signal-stdout.ts
-        signal-auth.ts
+      telegram/
+        telegram-client.ts
+        telegram-poller.ts
+        telegram-dispatcher.ts
+        telegram-stdout.ts
+        telegram-auth.ts
 
     schemas/
-      signal-schema.ts
+      telegram-schema.ts
 
     types/
       transport.ts
-      signal.ts
+      telegram.ts
 
   data/
     current-config.json
@@ -125,24 +131,25 @@ agent-system/
     long-term-memory.json
     traces/
     sessions.json
+    telegram-offset.json
 ```
 
 ---
 
 # Where to Refactor
 
-Step 1 was “CLI first.” Step 2 needs a **shared turn orchestrator**.
+Step 1 was CLI-first. Step 2 keeps a shared orchestrator.
 
-## New layer: `process-user-turn.ts`
+## Shared layer: `process-user-turn.ts`
 
-This becomes a shared function for CLI and Signal:
+Continue using one shared function for CLI and Telegram:
 
 ```ts
 export async function processUserTurn(params: {
   sessionId: string;
   userMessage: string;
   workspaceRoot: string;
-  channel: 'cli' | 'signal';
+  channel: 'cli' | 'telegram';
   remoteUserId: string;
 }): Promise<{
   trace: MainAgentTrace;
@@ -154,9 +161,9 @@ Responsibilities:
 
 1. run `runMainAgent`
 2. run `runMetaAgent`
-3. return the result to the transport adapter
+3. return transport-agnostic result
 
-CLI and Signal become thin wrappers on top of this function.
+CLI and Telegram remain thin wrappers.
 
 ---
 
@@ -165,34 +172,43 @@ CLI and Signal become thin wrappers on top of this function.
 ## `src/types/transport.ts`
 
 ```ts
-export type TransportMode = 'cli' | 'signal';
+export type TransportMode = 'cli' | 'telegram';
 
-export interface SignalTransportConfig {
+export interface TelegramTransportConfig {
   enabled: boolean;
-  restBaseUrl: string;
-  localNumber: string;
-  allowedUserNumber: string;
-  webhookPort: number;
-  webhookPath: string;
+  botToken: string;
+  allowedChatId: string;
+  // Optional strict check when using private chat with one account.
+  allowedUserId?: string;
+  pollingIntervalMs: number;
+  pollingTimeoutSec: number;
+  maxUpdatesPerPoll: number;
 }
 ```
 
-Add these fields to the main `AppConfig`.
+Add these fields to `AppConfig`.
 
-## `src/types/signal.ts`
+## `src/types/telegram.ts`
 
 ```ts
-export interface SignalInboundMessage {
-  envelopeId: string;
-  senderNumber: string;
-  recipientNumber: string;
+export interface TelegramInboundMessage {
+  updateId: number;
+  chatId: string;
+  userId: string;
+  messageId: number;
   timestamp: string;
   messageText: string;
 }
 
-export interface SignalSendMessageInput {
-  message: string;
-  recipient: string;
+export interface TelegramSendMessageInput {
+  chatId: string;
+  text: string;
+  replyToMessageId?: number;
+}
+
+export interface TelegramGetUpdatesResult {
+  ok: boolean;
+  result: unknown[];
 }
 ```
 
@@ -202,20 +218,17 @@ export interface SignalSendMessageInput {
 
 ## Extend `data/current-config.json`
 
-Add:
-
 ```json
 {
-  "app": {
-    "mode": "cli"
-  },
-  "signal": {
+  "app": { "mode": "cli" },
+  "telegram": {
     "enabled": false,
-    "restBaseUrl": "http://127.0.0.1:8080",
-    "localNumber": "+48...",
-    "allowedUserNumber": "+48...",
-    "webhookPort": 3030,
-    "webhookPath": "/signal/webhook"
+    "botToken": "<telegram-bot-token>",
+    "allowedChatId": "123456789",
+    "allowedUserId": "123456789",
+    "pollingIntervalMs": 1000,
+    "pollingTimeoutSec": 25,
+    "maxUpdatesPerPoll": 20
   }
 }
 ```
@@ -224,112 +237,125 @@ Add:
 
 For step 2:
 
-* exactly one `allowedUserNumber`
-* if the number doesn’t match, do not respond
-* no “allow all” fallback
+* exactly one `allowedChatId`
+* if chat does not match, do not respond
+* optionally enforce `allowedUserId` too
+* no "allow all" fallback
 
-This is a hard policy, not guidance.
+Hard policy, not guidance.
 
 ---
 
-# Webhook vs Polling
+# Polling vs Webhook
 
 Two viable options:
 
-## Option A – webhook (preferred)
+## Option A - long polling (preferred)
 
-`signal-cli-rest-api` pushes events to our local HTTP listener.
+Agent repeatedly calls `getUpdates` with `offset = lastProcessed + 1`.
 
 Pros:
 
-* simpler runtime
+* works on local machine without inbound networking
+* simpler dev setup from phone
+* stable and officially supported
+
+## Option B - webhook
+
+Telegram pushes updates to local HTTP endpoint.
+
+Pros:
+
 * lower latency
-* cleaner flow
-
-## Option B – polling
-
-Our app polls the REST API every N seconds.
-
-Pros:
-
-* fewer webhook requirements
+* lower polling noise
 
 Cons:
 
-* easier to create duplicates
-* harder acknowledgement flow
+* requires HTTPS reachable from Telegram
+* needs reverse proxy/tunnel in local dev
 
 ### Decision for Step 2
 
-* implement webhook first
-* treat polling as a future enhancement
+* implement long polling first
+* keep webhook as future enhancement
 
 ---
 
-# Signal Modules
+# Telegram Modules
 
-## `src/transport/signal/signal-client.ts`
+## `src/transport/telegram/telegram-client.ts`
 
-REST client for:
+Bot API client for:
 
-* `send`
-* health check
-* optional helpers
+* `getUpdates`
+* `sendMessage`
+* `getMe` health check
 
 ```ts
-export async function sendSignalMessage(params: {
-  restBaseUrl: string;
-  localNumber: string;
-  recipient: string;
-  message: string;
-}): Promise<void>;
-
-export async function getSignalHealth(restBaseUrl: string): Promise<{
+export async function getTelegramHealth(botToken: string): Promise<{
   ok: boolean;
-  version?: string;
-  mode?: string;
+  username?: string;
+  id?: number;
 }>;
+
+export async function getTelegramUpdates(params: {
+  botToken: string;
+  offset?: number;
+  timeoutSec: number;
+  limit: number;
+}): Promise<TelegramInboundMessage[]>;
+
+export async function sendTelegramMessage(params: {
+  botToken: string;
+  chatId: string;
+  text: string;
+  replyToMessageId?: number;
+}): Promise<void>;
 ```
 
-## `src/transport/signal/signal-auth.ts`
+## `src/transport/telegram/telegram-auth.ts`
 
 Access-policy helper:
 
 ```ts
-export function isAllowedSignalSender(params: {
-  senderNumber: string;
-  allowedUserNumber: string;
+export function isAllowedTelegramSource(params: {
+  chatId: string;
+  userId: string;
+  allowedChatId: string;
+  allowedUserId?: string;
 }): boolean;
 ```
 
-Normalize numbers (trim, E.164-like comparison). No aliases in step 2.
+Normalize numeric values as strings before compare.
 
-## `src/transport/signal/signal-webhook.ts`
+## `src/transport/telegram/telegram-poller.ts`
 
-Small HTTP server responsible for:
+Polling loop responsible for:
 
-* receiving POST webhooks
-* validating payloads
-* extracting one or many messages
-* passing them to the dispatcher
+* loading last processed offset
+* requesting updates
+* validating payload
+* dispatching messages
+* saving updated offset
 
-## `src/transport/signal/signal-dispatcher.ts`
+## `src/transport/telegram/telegram-dispatcher.ts`
 
 Orchestrates:
 
-1. sender validation
+1. source validation
 2. session lookup
 3. `processUserTurn`
-4. sending replies back to Signal
+4. sending replies back to Telegram
 5. stdout mirroring
 
-## `src/transport/signal/signal-stdout.ts`
+## `src/transport/telegram/telegram-stdout.ts`
 
 Dedicated to step 2b.
 
 ```ts
-export function logSignalConversationTurn(params: {
-  senderNumber: string;
+export function logTelegramConversationTurn(params: {
+  chatId: string;
+  userId: string;
   userMessage: string;
   assistantMessage: string;
   traceId: string;
@@ -341,78 +367,98 @@ export function logSignalConversationTurn(params: {
 Desired output:
 
 ```text
-[signal] from +48...
-user: jakie sa newsy na filmweb.pl
-assistant: ...
-trace: trace_...
-meta: 0.82
+[telegram] from chat=123456789 user=123456789
+[telegram] user: what changed in config?
+[telegram] assistant: ...
+[telegram] trace: trace_...
+[telegram] meta score: 0.82
 ```
 
 ---
 
-# Session Handling
+# Offset + Session Handling
 
 ## Problem
 
-CLI reuses one session ID per runtime; Signal needs stable session mapping.
+Polling can re-deliver updates if offset is not persisted.
 
 ## Solution
 
-Add `src/core/session-store.ts`.
+Add `src/core/telegram-offset-store.ts`.
 
 File:
 
-* `data/sessions.json`
+* `data/telegram-offset.json`
 
-Example map:
+Example:
 
 ```json
 {
-  "signal:+48123123123": "session_20260308_abcd1234"
+  "lastProcessedUpdateId": 912345678
 }
 ```
 
 API:
 
 ```ts
-export async function getOrCreateSessionId(key: string): Promise<string>;
+export async function getLastProcessedUpdateId(): Promise<number | null>;
+export async function setLastProcessedUpdateId(updateId: number): Promise<void>;
 ```
 
-For step 2 the key can be `signal:${senderNumber}`. Even with one user, keep it transport-agnostic.
+Session mapping remains in `data/sessions.json`:
+
+```json
+{
+  "telegram:chat:123456789:user:123456789": "session_20260309_abcd1234"
+}
+```
+
+Use key format:
+
+* `telegram:chat:${chatId}:user:${userId}`
+
+Even with one user, keep it transport-agnostic.
 
 ---
 
 # Zod Schemas
 
-## `src/schemas/signal-schema.ts`
+## `src/schemas/telegram-schema.ts`
 
-Validate:
+Validate and extract only needed fields from Telegram updates:
 
-* inbound webhook payload
-* sender number
-* message body
-* timestamp
+* `update_id`
+* `message.chat.id`
+* `message.from.id`
+* `message.message_id`
+* `message.date`
+* `message.text`
 
-Signal payloads can be verbose—create helpers that extract only the needed fields. Ignore attachments/reactions in this step.
+Ignore in step 2:
+
+* photos/files
+* callback queries
+* edited messages
+* group admin events
+
+Only process plain text `message.text` updates.
 
 ---
 
 # Runtime Orchestration
 
-## `src/app/run-signal.ts`
+## `src/app/run-telegram.ts`
 
-Entry point for Signal mode.
+Entry point for Telegram mode.
 
 Steps:
 
 1. load config
-2. verify `signal.enabled`
-3. health check the REST wrapper
-4. start the webhook server
+2. verify `telegram.enabled`
+3. health check via `getMe`
+4. start polling loop
 5. log status to stdout
-6. process messages
-
-CLI remains a separate transport.
+6. process messages continuously
 
 ## `src/index.ts`
 
@@ -421,40 +467,42 @@ Bootstrapping should choose transport:
 ```ts
 if (config.app.mode === 'cli') {
   await runCli();
-} else if (config.app.mode === 'signal') {
-  await runSignal();
+} else if (config.app.mode === 'telegram') {
+  await runTelegram();
 }
 ```
 
 ---
 
-# Flow of a Signal Message
+# Flow of a Telegram Message
 
-1. Signal user sends a message.
-2. `signal-cli-rest-api` sends an event to our webhook.
-3. Payload is validated.
-4. Sender number is checked.
-5. If sender is not allowed:
+1. User sends bot a message from phone.
+2. Poller pulls new updates from Telegram.
+3. Update payload is validated.
+4. Source (chat/user) is checked.
+5. If source is not allowed:
 
-   * log the rejection
-   * stop
-6. If sender is allowed:
+   * log rejection
+   * continue
+6. If source is allowed:
 
-   * fetch or create a session ID
+   * fetch/create a session ID
    * run `processUserTurn`
-   * send the reply back to Signal
+   * send final answer with `sendMessage`
    * mirror the turn to stdout
+   * persist `lastProcessedUpdateId`
 
 ---
 
 # Logging and Observability
 
-## In `signal` mode
+## In `telegram` mode
 
 Stdout should show:
 
-* server startup
-* Signal REST health
+* startup
+* bot identity/health
+* polling started
 * inbound accepted
 * inbound rejected
 * outbound sent
@@ -466,12 +514,13 @@ This is an operational log, not an interactive prompt.
 ### Example
 
 ```text
-[signal] webhook listening on :3030/signal/webhook
-[signal] accepted sender +48123123123
-[signal] user: jakie sa newsy na filmweb.pl
-[signal] assistant: Na Filmwebie widze...
-[signal] trace: trace_20260308_abcd1234
-[signal] meta score: 0.81
+[telegram] bot healthy username=@local_agent_bot id=123456789
+[telegram] polling started (timeout=25s)
+[telegram] accepted chat=123456789 user=123456789
+[telegram] user: summarize README changes
+[telegram] assistant: Here are the changes...
+[telegram] trace: trace_20260309_abcd1234
+[telegram] meta score: 0.81
 ```
 
 ---
@@ -480,19 +529,19 @@ This is an operational log, not an interactive prompt.
 
 ## Hard rules for Step 2
 
-1. exactly one allowed number
-2. no wildcards
-3. no replies to unknown senders
+1. exactly one allowed chat id
+2. optional exact allowed user id
+3. no replies to unknown chats/users
 4. no auto-trusting new users
-5. number configured locally, not via prompt
+5. bot token only from local config/env
 
 ## Out of scope (future steps)
 
 * multi-user support
-* per-group ACLs
-* roles/admin permissions
-* safety-number authorization
-* onboarding new contacts through the agent
+* group chat support
+* role-based controls
+* dynamic onboarding via agent conversation
+* command ACL matrix
 
 ---
 
@@ -500,60 +549,52 @@ This is an operational log, not an interactive prompt.
 
 Meta Agent must **not** propose changes to:
 
-* `signal.allowedUserNumber`
-* `signal.localNumber`
-* `signal.restBaseUrl`
+* `telegram.botToken`
+* `telegram.allowedChatId`
+* `telegram.allowedUserId`
 * `app.mode`
 
-These are operational/security fields. Proposed config patches remain limited to the step-1 safe fields.
+These are operational/security fields. Proposed config patches remain limited to safe step-1 fields.
 
 ---
 
 # README / Setup Docs
 
-Add two documents:
+Add or update:
 
 ## `README.md`
 
 Include:
 
-* how to switch the mode to `signal`
-* which env/config entries to set
+* how to switch mode to `telegram`
+* which config/env entries to set
+* how to find your Telegram chat/user id
 
-## `docs/signal-setup.md`
+## `docs/telegram-setup.md`
 
 Describe:
 
-1. installing `signal-cli-rest-api`
-2. exposing the REST endpoint on localhost
-3. registering or linking the Signal number
-4. health checks
-5. starting the agent
-
-Important note:
-
-* linking `signal-cli` can be unstable; document manual retry steps
+1. create a bot with BotFather
+2. configure `botToken`
+3. get `chat_id` and `user_id`
+4. run health check (`getMe`)
+5. start agent in telegram mode
+6. verify round-trip and logs
 
 ---
 
-# Packages / Dependencies
+# Dependencies
 
-If you use Express for the webhook:
+No mandatory new package is required.
 
-```json
-{
-  "dependencies": {
-    "express": "^4.21.0"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.0"
-  }
-}
-```
+Optional helpers (if desired):
 
-You can use `node:http`, but Express keeps webhook routing straightforward.
+* `p-retry` for robust API retries
+* `pino` for structured logs
 
-**Recommendation:** use Express for step 2.
+Recommendation for step 2:
+
+* use built-in `fetch` + existing logging style
 
 ---
 
@@ -561,25 +602,27 @@ You can use `node:http`, but Express keeps webhook routing straightforward.
 
 ## Minimum scope
 
-1. unit test `isAllowedSignalSender`
-2. unit test the Signal payload parser
-3. unit test `getOrCreateSessionId`
-4. integration-like test of the dispatcher:
+1. unit test `isAllowedTelegramSource`
+2. unit test Telegram update parser (`telegram-schema`)
+3. unit test offset store read/write behavior
+4. unit test session key mapping for Telegram
+5. integration-like test dispatcher:
 
-   * fake inbound Signal payload
-   * fake `sendSignalMessage`
+   * fake inbound update
+   * fake `sendTelegramMessage`
    * expect `processUserTurn` to run
 
 ## Manual smoke test
 
-1. start `signal-cli-rest-api`
-2. run the agent in `signal` mode
-3. send a message from the allowed number
-4. verify the reply in Signal
-5. check stdout logs
-6. inspect trace + meta output
-7. send a message from a different number
-8. confirm no reply and a logged rejection
+1. create and configure Telegram bot
+2. set app to `telegram` mode
+3. run agent
+4. send message from allowed account
+5. verify Telegram reply
+6. check stdout logs
+7. inspect trace + meta output
+8. send message from another account/chat
+9. confirm no reply and logged rejection
 
 ---
 
@@ -587,32 +630,36 @@ You can use `node:http`, but Express keeps webhook routing straightforward.
 
 ## Stage 1
 
-Extract the shared turn orchestrator:
+Refactor transport mode + shared orchestrator contract:
 
-* `process-user-turn.ts`
-* `session-store.ts`
+* ensure `process-user-turn.ts` supports `channel: 'telegram'`
+* adjust `transport` type definitions
 
 ## Stage 2
 
-Add Signal config/types/schemas.
+Add Telegram config/types/schemas.
 
 ## Stage 3
 
-Add REST client + health check.
+Add Telegram client + health check (`getMe`).
 
 ## Stage 4
 
-Add webhook listener + dispatcher.
+Add polling loop + offset persistence.
 
 ## Stage 5
 
-Add stdout mirror for the Signal mode.
+Add dispatcher + auth gate.
 
 ## Stage 6
 
-Wire `index.ts` to honor `app.mode`.
+Add stdout mirror in Telegram mode.
 
 ## Stage 7
+
+Wire `index.ts` to honor `app.mode = telegram`.
+
+## Stage 8
 
 Add docs and smoke-test instructions.
 
@@ -621,75 +668,75 @@ Add docs and smoke-test instructions.
 # Ready Prompt for Execution
 
 ```text
-Implement step 2 of the local TypeScript agent system by adding a Signal transport via signal-cli-rest-api.
+Implement step 2 of the local TypeScript agent system by adding a Telegram Bot transport.
 
 Goals:
 - Reuse the existing Main Agent / Meta Agent pipeline.
-- Add a transport mode switch: cli | signal.
-- In signal mode, accept inbound Signal messages, run the same agent pipeline, and send replies back through signal-cli-rest-api.
-- Restrict Signal access to exactly one allowed sender phone number.
-- Ignore or reject messages from all other senders.
-- In signal mode, also print the full conversation flow to stdout for observability.
+- Add a transport mode switch: cli | telegram.
+- In telegram mode, receive inbound Telegram messages, run the same agent pipeline, and send replies back via Telegram Bot API.
+- Restrict Telegram access to exactly one allowed chat/user.
+- Ignore or reject messages from all other chats/users.
+- In telegram mode, print the full conversation flow to stdout for observability.
 
 Technical requirements:
 - Keep the existing TypeScript architecture modular.
-- Extract a shared processUserTurn() orchestration function for both CLI and Signal.
-- Add Signal config to current-config.json:
-  - signal.enabled
-  - signal.restBaseUrl
-  - signal.localNumber
-  - signal.allowedUserNumber
-  - signal.webhookPort
-  - signal.webhookPath
+- Reuse shared processUserTurn() orchestration for both CLI and Telegram.
+- Add Telegram config to current-config.json:
+  - telegram.enabled
+  - telegram.botToken
+  - telegram.allowedChatId
+  - telegram.allowedUserId (optional but supported)
+  - telegram.pollingIntervalMs
+  - telegram.pollingTimeoutSec
+  - telegram.maxUpdatesPerPoll
   - app.mode
 - Add:
-  - src/app/run-signal.ts
-  - src/core/process-user-turn.ts
-  - src/core/session-store.ts
-  - src/transport/types.ts
-  - src/transport/signal/signal-client.ts
-  - src/transport/signal/signal-webhook.ts
-  - src/transport/signal/signal-dispatcher.ts
-  - src/transport/signal/signal-stdout.ts
-  - src/transport/signal/signal-auth.ts
-  - src/schemas/signal-schema.ts
+  - src/app/run-telegram.ts
+  - src/core/telegram-offset-store.ts
+  - src/transport/telegram/telegram-client.ts
+  - src/transport/telegram/telegram-poller.ts
+  - src/transport/telegram/telegram-dispatcher.ts
+  - src/transport/telegram/telegram-stdout.ts
+  - src/transport/telegram/telegram-auth.ts
+  - src/schemas/telegram-schema.ts
   - src/types/transport.ts
-  - src/types/signal.ts
+  - src/types/telegram.ts
 
 Behavior requirements:
-- On inbound Signal message:
-  - validate webhook payload
-  - extract sender number and text
-  - check sender against allowedUserNumber
+- On inbound Telegram message:
+  - validate update payload
+  - extract chat/user/text/update_id
+  - check source against allowedChatId (+ optional allowedUserId)
   - if not allowed, log rejection and do nothing else
-  - if allowed, get or create a session id for that sender
+  - if allowed, get/create session id for that source
   - call processUserTurn()
-  - send the final answer back to Signal
-  - log the conversation to stdout
+  - send final answer back to Telegram
+  - log conversation to stdout
+  - persist processed update offset
 - Reuse existing trace/meta/proposed-config persistence flow.
-- Keep Meta Agent config changes limited to step-1 safe fields only.
+- Keep Meta Agent config changes limited to safe step-1 fields only.
 
 Implementation preferences:
-- Use express for the webhook listener.
-- Use zod for Signal payload validation.
-- Store sessions in data/sessions.json.
+- Use long polling (`getUpdates`) for step 2.
+- Use zod for Telegram payload validation.
+- Store polling offset in data/telegram-offset.json.
 - Keep stdout logging simple and explicit.
 
 Security:
-- Single allowed Signal sender only in this step.
+- Single allowed Telegram chat/user in this step.
 - No wildcard access.
 - No auto-approval of new users.
-- Do not let the meta-agent modify Signal transport security settings.
+- Do not let the meta-agent modify Telegram transport security settings.
 ```
 
 ---
 
 # Two Practical Notes
 
-## 1. Signal onboarding lives outside the core app
+## 1. Start with polling, not webhooks
 
-Do not embed number registration/linking into the agent itself. Keep it as manual operational setup.
+Polling is the shortest reliable path for local mobile usage.
 
-## 2. Stdout mirror is not the only log
+## 2. Trace JSON remains source of truth
 
-It is convenient for developers, but trace JSON remains the source of truth.
+Stdout mirror is for runtime visibility; traces remain canonical for audits and iteration.
