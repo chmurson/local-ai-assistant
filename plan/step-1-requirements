@@ -1,0 +1,32 @@
+Build a local agent system in TypeScript.
+
+Requirements:
+- Use LM Studio as the model provider through its OpenAI-compatible API.
+- Implement two agents:
+  1. Main Agent: talks to the user, uses tools, solves tasks.
+  2. Meta Agent: evaluates the Main Agent's traces and proposes safe improvements.
+- Do not allow the Meta Agent to modify source code automatically in v1.
+- Allow the Meta Agent to propose and optionally auto-apply changes only to:
+  - system prompt
+  - enabled tools from an allowlist
+  - temperature
+  - model routing
+- Add these tools:
+  - read_file
+  - write_file
+  - list_files
+  - http_fetch
+- Store:
+  - current config
+  - proposed config
+  - traces
+  - long-term memory
+  as local JSON files.
+- Add a simple CLI chat interface first.
+- After every user interaction:
+  - run Main Agent
+  - persist a trace
+  - run Meta Agent on that trace
+  - save a proposed config patch
+- Keep the code modular and easy to extend later with Telegram or a web UI.
+- Include strong typing, clean architecture, and comments.

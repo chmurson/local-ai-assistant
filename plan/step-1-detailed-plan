@@ -1,0 +1,1224 @@
+Jasne — poniżej masz **konkretny technical spec plik po pliku** dla **v1: agent + meta-agent pod LM Studio**, tak żebyś mógł to prawie wprost wkleić do Codexa.
+
+Założenie: **TypeScript, Node.js, CLI first, JSON storage, bez automatycznej edycji kodu przez meta-agenta**.
+
+---
+
+# Cel v1
+
+System ma:
+
+* gadać z użytkownikiem w CLI
+* używać narzędzi
+* zapisywać trace z wykonania
+* uruchamiać meta-agenta po każdej interakcji
+* generować propozycje ulepszeń konfiguracji
+* opcjonalnie auto-aplikować tylko bezpieczne zmiany:
+
+  * prompt
+  * temperatura
+  * enabled tools z allowlisty
+  * model routing
+
+---
+
+# Stack
+
+* Node.js
+* TypeScript
+* `openai` SDK z `baseURL` wskazującym na LM Studio
+* `zod` do walidacji
+* `fs/promises`
+* opcjonalnie `chalk` do CLI
+* opcjonalnie `dotenv`
+
+---
+
+# Struktura projektu
+
+```text
+agent-system/
+  package.json
+  tsconfig.json
+  .env.example
+  README.md
+
+  src/
+    index.ts
+
+    app/
+      run-cli.ts
+
+    core/
+      llm-client.ts
+      model-router.ts
+      run-main-agent.ts
+      run-meta-agent.ts
+      tool-runner.ts
+      trace-store.ts
+      config-store.ts
+      memory-store.ts
+      auto-apply.ts
+
+    agents/
+      main-agent.ts
+      meta-agent.ts
+      prompts/
+        main-system.ts
+        meta-system.ts
+
+    tools/
+      index.ts
+      types.ts
+      read-file.ts
+      write-file.ts
+      list-files.ts
+      http-fetch.ts
+
+    schemas/
+      config-schema.ts
+      trace-schema.ts
+      meta-output-schema.ts
+      memory-schema.ts
+
+    types/
+      agent.ts
+      config.ts
+      trace.ts
+      memory.ts
+      tool.ts
+      llm.ts
+
+    utils/
+      now.ts
+      id.ts
+      json.ts
+      logger.ts
+
+  data/
+    current-config.json
+    proposed-config.json
+    long-term-memory.json
+    traces/
+```
+
+---
+
+# Przepływ działania
+
+## Jeden pełny cykl
+
+1. User wpisuje wiadomość w CLI
+2. System ładuje:
+
+   * `current-config.json`
+   * `long-term-memory.json`
+3. `model-router` wybiera model dla main agenta
+4. Main agent:
+
+   * dostaje prompt
+   * dostaje krótką pamięć
+   * może użyć tools
+   * generuje odpowiedź
+   * generuje trace
+5. Trace zapisuje się do `data/traces/...`
+6. `model-router` wybiera model dla meta-agenta
+7. Meta-agent analizuje trace
+8. Zwraca:
+
+   * score
+   * issues
+   * proposedChanges
+9. Propozycja zapisuje się do `proposed-config.json`
+10. `auto-apply.ts` decyduje, czy bezpieczne zmiany można wdrożyć do `current-config.json`
+11. CLI pokazuje:
+
+* odpowiedź agenta
+* skrót trace
+* skrót rekomendacji meta-agenta
+
+---
+
+# Typy domenowe
+
+## `src/types/config.ts`
+
+Tu trzymaj główne typy konfiguracji.
+
+```ts
+export type ToolName =
+  | 'read_file'
+  | 'write_file'
+  | 'list_files'
+  | 'http_fetch';
+
+export interface AgentConfig {
+  model: string;
+  temperature: number;
+  maxOutputTokens: number;
+  systemPrompt: string;
+  enabledTools: ToolName[];
+}
+
+export interface PolicyConfig {
+  allowAutoApplyPromptChanges: boolean;
+  allowAutoApplyToolChanges: boolean;
+  allowAutoApplyTemperatureChanges: boolean;
+  allowAutoApplyModelRoutingChanges: boolean;
+  allowAutoApplyCodeChanges: boolean;
+  maxToolCallsPerRun: number;
+  toolAllowlist: ToolName[];
+}
+
+export interface ModelRoutingConfig {
+  defaultMainModel: string;
+  defaultMetaModel: string;
+  taskOverrides?: Record<string, string>;
+}
+
+export interface AppConfig {
+  mainAgent: AgentConfig;
+  metaAgent: AgentConfig;
+  policies: PolicyConfig;
+  routing: ModelRoutingConfig;
+}
+```
+
+## `src/types/trace.ts`
+
+```ts
+import type { ToolName } from './config';
+
+export interface ToolCallRecord {
+  toolName: ToolName;
+  input: unknown;
+  output: unknown;
+  startedAt: string;
+  finishedAt: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface AgentStepRecord {
+  kind: 'reasoning' | 'tool_call' | 'tool_result' | 'final';
+  content: string;
+  timestamp: string;
+}
+
+export interface MainAgentTrace {
+  traceId: string;
+  sessionId: string;
+  userMessage: string;
+  finalAnswer: string;
+  usedModel: string;
+  temperature: number;
+  systemPromptVersion: string;
+  planSummary: string;
+  toolCalls: ToolCallRecord[];
+  steps: AgentStepRecord[];
+  startedAt: string;
+  finishedAt: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface MetaAgentEvaluation {
+  traceId: string;
+  usedModel: string;
+  score: number;
+  confidence: number;
+  issues: string[];
+  strengths: string[];
+  proposedChanges: ProposedConfigPatch;
+  summary: string;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface ProposedConfigPatch {
+  mainAgent?: Partial<{
+    systemPrompt: string;
+    temperature: number;
+    enabledTools: ToolName[];
+    model: string;
+  }>;
+  routing?: Partial<{
+    defaultMainModel: string;
+    defaultMetaModel: string;
+  }>;
+}
+```
+
+## `src/types/memory.ts`
+
+```ts
+export interface UserPreferenceMemory {
+  preferredLanguage?: string;
+  preferredAnswerStyle?: string;
+}
+
+export interface SystemLearningMemory {
+  successfulPromptPatterns: string[];
+  failedPromptPatterns: string[];
+  notes: string[];
+}
+
+export interface LongTermMemory {
+  userPreferences: UserPreferenceMemory;
+  systemLearning: SystemLearningMemory;
+}
+```
+
+---
+
+# Schemy Zod
+
+## `src/schemas/config-schema.ts`
+
+Walidacja konfiguracji przy odczycie z pliku.
+
+* zrób `z.enum([...])` dla tools
+* zrób zakres temperatury np. `0..2`
+* zrób `maxToolCallsPerRun >= 0`
+
+To ważne, żeby meta-agent nie zapisał Ci czegoś zepsutego.
+
+## `src/schemas/trace-schema.ts`
+
+Waliduje trace przed zapisem i odczytem.
+
+## `src/schemas/meta-output-schema.ts`
+
+Waliduje output meta-agenta.
+
+Tu bardzo ważne:
+
+* `score`: 0–1
+* `confidence`: 0–1
+* `proposedChanges` nie może zawierać nic poza dozwolonym zakresem
+
+## `src/schemas/memory-schema.ts`
+
+Walidacja long-term memory.
+
+---
+
+# Utils
+
+## `src/utils/id.ts`
+
+Generator prostych ID.
+
+```ts
+export function createId(prefix: string): string
+```
+
+np. `trace_20260306_abcd1234`
+
+## `src/utils/now.ts`
+
+```ts
+export function nowIso(): string
+```
+
+## `src/utils/json.ts`
+
+Helpers:
+
+```ts
+export async function readJsonFile<T>(path: string): Promise<T>
+export async function writeJsonFile(path: string, data: unknown): Promise<void>
+export async function ensureDir(path: string): Promise<void>
+```
+
+## `src/utils/logger.ts`
+
+Lekki logger do CLI:
+
+```ts
+export const logger = {
+  info(...args: unknown[]) {},
+  warn(...args: unknown[]) {},
+  error(...args: unknown[]) {},
+};
+```
+
+---
+
+# Storage layer
+
+## `src/core/config-store.ts`
+
+Odpowiada za:
+
+* odczyt `current-config.json`
+* odczyt `proposed-config.json`
+* zapis obu plików
+* walidację przez Zod
+
+API:
+
+```ts
+export async function loadCurrentConfig(): Promise<AppConfig>
+export async function saveCurrentConfig(config: AppConfig): Promise<void>
+export async function loadProposedConfig(): Promise<ProposedConfigPatch | null>
+export async function saveProposedConfig(patch: ProposedConfigPatch): Promise<void>
+```
+
+## `src/core/memory-store.ts`
+
+Odpowiada za `long-term-memory.json`.
+
+API:
+
+```ts
+export async function loadLongTermMemory(): Promise<LongTermMemory>
+export async function saveLongTermMemory(memory: LongTermMemory): Promise<void>
+```
+
+## `src/core/trace-store.ts`
+
+Każdy trace jako osobny plik.
+
+API:
+
+```ts
+export async function saveMainTrace(trace: MainAgentTrace): Promise<void>
+export async function saveMetaEvaluation(evaluation: MetaAgentEvaluation): Promise<void>
+export async function loadRecentMainTraces(limit: number): Promise<MainAgentTrace[]>
+```
+
+Możesz zapisywać:
+
+* `data/traces/main/<traceId>.json`
+* `data/traces/meta/<traceId>.json`
+
+---
+
+# LLM client
+
+## `src/core/llm-client.ts`
+
+Jedno miejsce do rozmowy z LM Studio.
+
+Zakładamy `.env`:
+
+```env
+LM_STUDIO_BASE_URL=http://127.0.0.1:1234/v1
+LM_STUDIO_API_KEY=lm-studio
+```
+
+API:
+
+```ts
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface LlmTextResponse {
+  text: string;
+  model: string;
+}
+
+export async function generateText(params: {
+  model: string;
+  temperature: number;
+  maxOutputTokens: number;
+  messages: ChatMessage[];
+}): Promise<LlmTextResponse>;
+```
+
+W v1 nie komplikowałbym tego tool-callingiem po stronie modelu.
+Lepiej zrobić prostszy wzorzec:
+
+* model zwraca **JSON planu / decyzji**
+* runtime wykonuje tools
+* potem model dostaje wyniki tools i odpowiada finalnie
+
+To będzie dużo stabilniejsze niż liczenie na idealne function calling w każdym modelu lokalnym.
+
+---
+
+# Routing modeli
+
+## `src/core/model-router.ts`
+
+Na start bardzo prosto:
+
+```ts
+export function pickMainAgentModel(config: AppConfig, taskHint?: string): string
+export function pickMetaAgentModel(config: AppConfig): string
+```
+
+Reguły:
+
+* jeśli `taskHint` pasuje do override, użyj override
+* inaczej `defaultMainModel`
+* meta-agent bierze `defaultMetaModel`
+
+Potem możesz dodać:
+
+* coding task → model codingowy
+* long reasoning → większy model
+
+---
+
+# Tool system
+
+## `src/tools/types.ts`
+
+```ts
+import type { ToolName } from '../types/config';
+
+export interface ToolContext {
+  workspaceRoot: string;
+}
+
+export interface ToolDefinition<Input = unknown, Output = unknown> {
+  name: ToolName;
+  description: string;
+  run: (input: Input, context: ToolContext) => Promise<Output>;
+}
+```
+
+## `src/tools/read-file.ts`
+
+Input:
+
+```ts
+type ReadFileInput = { path: string }
+```
+
+Zabezpieczenie:
+
+* tylko ścieżki wewnątrz `workspaceRoot`
+
+## `src/tools/write-file.ts`
+
+Input:
+
+```ts
+type WriteFileInput = { path: string; content: string }
+```
+
+Zabezpieczenia:
+
+* tylko `workspaceRoot`
+* v1 bez append-mode, tylko pełen overwrite
+
+## `src/tools/list-files.ts`
+
+Input:
+
+```ts
+type ListFilesInput = { path?: string }
+```
+
+## `src/tools/http-fetch.ts`
+
+Input:
+
+```ts
+type HttpFetchInput = {
+  url: string;
+  method?: 'GET';
+}
+```
+
+Ograniczenia v1:
+
+* tylko GET
+* timeout np. 10 sekund
+* zwracaj tylko tekst, max np. 20k znaków
+
+## `src/tools/index.ts`
+
+Eksport registry:
+
+```ts
+export const toolRegistry: Record<ToolName, ToolDefinition>;
+```
+
+---
+
+# Tool runner
+
+## `src/core/tool-runner.ts`
+
+To warstwa wykonawcza, która:
+
+* sprawdza czy tool jest włączony w configu
+* sprawdza allowlistę polityk
+* wykonuje tool
+* zapisuje wynik do `ToolCallRecord`
+
+API:
+
+```ts
+export async function runTool(params: {
+  toolName: ToolName;
+  input: unknown;
+  enabledTools: ToolName[];
+  policyAllowlist: ToolName[];
+  workspaceRoot: string;
+}): Promise<ToolCallRecord>;
+```
+
+---
+
+# Prompty
+
+## `src/agents/prompts/main-system.ts`
+
+Eksport funkcji generującej system prompt dla main agenta.
+
+```ts
+export function buildMainSystemPrompt(params: {
+  basePrompt: string;
+  enabledTools: string[];
+  memorySummary?: string;
+}): string
+```
+
+Treść promptu:
+
+* jesteś praktycznym agentem
+* najpierw zrozum zadanie
+* użyj tools tylko gdy to pomaga
+* nie zmyślaj wyników narzędzi
+* planuj zwięźle
+* odpowiedź ma być konkretna
+* jeśli potrzebujesz narzędzia, zwróć decyzję w ustalonym JSON formacie
+
+### Format pracy main agenta
+
+Polecam 2-fazowy loop:
+
+#### Faza A — decyzja
+
+Model zwraca JSON:
+
+```json
+{
+  "planSummary": "Sprawdzę pliki i znajdę konfigurację.",
+  "shouldUseTool": true,
+  "toolName": "list_files",
+  "toolInput": {
+    "path": "."
+  }
+}
+```
+
+albo:
+
+```json
+{
+  "planSummary": "Nie potrzebuję narzędzi.",
+  "shouldUseTool": false,
+  "finalAnswer": "..."
+}
+```
+
+#### Faza B — finalizacja
+
+Po wykonaniu tools model dostaje:
+
+* user input
+* wcześniejszy plan
+* wyniki tools
+  i zwraca final answer.
+
+To jest prostsze niż pełny agent loop z 10 iteracjami.
+Na start daj max 3 iteracje.
+
+---
+
+## `src/agents/prompts/meta-system.ts`
+
+```ts
+export function buildMetaSystemPrompt(): string
+```
+
+Treść:
+
+* jesteś chłodnym ewaluatorem
+* analizujesz trace main agenta
+* proponujesz minimalne bezpieczne poprawki
+* nie wolno proponować edycji kodu
+* nie wolno zwiększać uprawnień poza allowlistą
+* output tylko jako JSON
+
+Format JSON:
+
+```json
+{
+  "score": 0.74,
+  "confidence": 0.82,
+  "issues": [
+    "Agent did not use an available tool even though it would help."
+  ],
+  "strengths": [
+    "Answer was concise."
+  ],
+  "summary": "The agent was useful but underused tools.",
+  "proposedChanges": {
+    "mainAgent": {
+      "temperature": 0.3
+    }
+  }
+}
+```
+
+---
+
+# Main agent runtime
+
+## `src/agents/main-agent.ts`
+
+Ta warstwa powinna tylko definiować logikę agenta, bez IO plików.
+
+API:
+
+```ts
+import type { AppConfig } from '../types/config';
+import type { LongTermMemory } from '../types/memory';
+import type { MainAgentTrace } from '../types/trace';
+
+export async function executeMainAgent(params: {
+  sessionId: string;
+  userMessage: string;
+  config: AppConfig;
+  memory: LongTermMemory;
+  workspaceRoot: string;
+}): Promise<MainAgentTrace>;
+```
+
+### Logika
+
+1. Zbuduj system prompt
+2. Zawołaj model po decyzję
+3. Jeśli `shouldUseTool === true`:
+
+   * uruchom tool
+   * dołóż `ToolCallRecord`
+   * zawołaj model ponownie
+4. Jeśli dalej chce tool i nie przekroczono limitu:
+
+   * kolejna iteracja
+5. Na końcu zapisz:
+
+   * final answer
+   * plan summary
+   * steps
+   * tool calls
+   * success/error
+
+### Ważne
+
+W `steps` nie zapisuj ukrytego chain-of-thought.
+Zapisuj tylko bezpieczny, jawny ślad:
+
+* “Agent decided to inspect files”
+* “Tool list_files was invoked”
+* “Agent returned final answer”
+
+---
+
+## `src/core/run-main-agent.ts`
+
+Orkiestruje main agenta + storage.
+
+API:
+
+```ts
+export async function runMainAgent(params: {
+  sessionId: string;
+  userMessage: string;
+  workspaceRoot: string;
+}): Promise<MainAgentTrace>;
+```
+
+To tu:
+
+* ładujesz config
+* ładujesz memory
+* wywołujesz `executeMainAgent`
+* zapisujesz trace
+
+---
+
+# Meta-agent runtime
+
+## `src/agents/meta-agent.ts`
+
+API:
+
+```ts
+import type { AppConfig } from '../types/config';
+import type { MainAgentTrace, MetaAgentEvaluation } from '../types/trace';
+
+export async function executeMetaAgent(params: {
+  trace: MainAgentTrace;
+  config: AppConfig;
+}): Promise<MetaAgentEvaluation>;
+```
+
+Input do modelu:
+
+* aktualny config
+* trace main agenta
+* polityki bezpieczeństwa
+
+Output:
+
+* JSON zgodny ze schemą
+
+---
+
+## `src/core/run-meta-agent.ts`
+
+API:
+
+```ts
+export async function runMetaAgent(params: {
+  trace: MainAgentTrace;
+}): Promise<MetaAgentEvaluation>;
+```
+
+To tu:
+
+* ładujesz config
+* uruchamiasz meta-agenta
+* walidujesz output
+* zapisujesz evaluation
+* zapisujesz `proposed-config.json`
+
+---
+
+# Auto-apply bezpiecznych zmian
+
+## `src/core/auto-apply.ts`
+
+To bardzo ważny moduł.
+
+API:
+
+```ts
+import type { AppConfig } from '../types/config';
+import type { ProposedConfigPatch } from '../types/trace';
+
+export function applySafePatch(params: {
+  currentConfig: AppConfig;
+  patch: ProposedConfigPatch;
+}): {
+  updatedConfig: AppConfig;
+  applied: string[];
+  rejected: string[];
+}
+```
+
+### Reguły
+
+Można zastosować tylko jeśli polityki na to pozwalają.
+
+#### Dozwolone:
+
+* `mainAgent.systemPrompt`
+* `mainAgent.temperature`
+* `mainAgent.enabledTools` tylko jeśli każdy tool jest w allowliście
+* routing modeli
+
+#### Niedozwolone:
+
+* jakiekolwiek pole związane z kodem
+* nowe uprawnienia poza allowlistą
+* temperatury poza zakresem
+* pusty model
+* nieznane pola
+
+---
+
+# CLI
+
+## `src/app/run-cli.ts`
+
+To główny interfejs.
+
+API:
+
+```ts
+export async function runCli(): Promise<void>
+```
+
+### Zachowanie
+
+Po starcie pokazuje:
+
+* aktywny model main agenta
+* aktywny model meta-agenta
+* dostępne komendy
+
+### Komendy
+
+* `/exit`
+* `/config`
+* `/proposed`
+* `/apply`
+* `/reject`
+* `/memory`
+* `/help`
+
+### Normalna wiadomość
+
+* idzie do main agenta
+* potem automatycznie do meta-agenta
+
+CLI powinno wyświetlić coś w stylu:
+
+```text
+You:
+> przejrzyj pliki w projekcie i powiedz co tu jest
+
+Agent:
+Znalazłem pliki konfiguracyjne i folder src...
+
+Meta:
+score: 0.78
+issues:
+- Agent could be more explicit about file structure.
+
+Proposed changes:
+- lower temperature to 0.3
+```
+
+---
+
+## `src/index.ts`
+
+Punkt wejścia:
+
+```ts
+import { runCli } from './app/run-cli';
+
+runCli().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+---
+
+# JSON files startowe
+
+## `data/current-config.json`
+
+Przykład:
+
+```json
+{
+  "mainAgent": {
+    "model": "qwen3-coder-30b",
+    "temperature": 0.4,
+    "maxOutputTokens": 1200,
+    "systemPrompt": "You are a practical, concise local assistant. Help the user solve tasks clearly and safely.",
+    "enabledTools": ["read_file", "write_file", "list_files", "http_fetch"]
+  },
+  "metaAgent": {
+    "model": "lfm2-24b",
+    "temperature": 0.2,
+    "maxOutputTokens": 900,
+    "systemPrompt": "You evaluate the main agent and propose small safe improvements.",
+    "enabledTools": []
+  },
+  "policies": {
+    "allowAutoApplyPromptChanges": true,
+    "allowAutoApplyToolChanges": true,
+    "allowAutoApplyTemperatureChanges": true,
+    "allowAutoApplyModelRoutingChanges": true,
+    "allowAutoApplyCodeChanges": false,
+    "maxToolCallsPerRun": 3,
+    "toolAllowlist": ["read_file", "write_file", "list_files", "http_fetch"]
+  },
+  "routing": {
+    "defaultMainModel": "qwen3-coder-30b",
+    "defaultMetaModel": "lfm2-24b",
+    "taskOverrides": {
+      "coding": "qwen3-coder-30b"
+    }
+  }
+}
+```
+
+## `data/proposed-config.json`
+
+Na start:
+
+```json
+{}
+```
+
+## `data/long-term-memory.json`
+
+```json
+{
+  "userPreferences": {
+    "preferredLanguage": "pl",
+    "preferredAnswerStyle": "practical"
+  },
+  "systemLearning": {
+    "successfulPromptPatterns": [],
+    "failedPromptPatterns": [],
+    "notes": []
+  }
+}
+```
+
+---
+
+# Package.json
+
+Minimalnie:
+
+```json
+{
+  "name": "agent-system",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "openai": "^4.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+---
+
+# Tsconfig
+
+Minimalny:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
+
+---
+
+# Ważne decyzje architektoniczne
+
+## 1. Nie dawaj meta-agentowi write access do kodu
+
+W v1 niech tylko proponuje zmiany configu.
+
+## 2. Nie trzymaj “ukrytego myślenia”
+
+Trace ma być operacyjny, nie introspekcyjny.
+
+## 3. Ogranicz liczbę tool calls
+
+Na start 3 wystarczą.
+
+## 4. JSON output od modeli waliduj zawsze przez Zod
+
+Lokalne modele lubią odpłynąć.
+
+## 5. Najpierw CLI, potem web, potem Telegram
+
+Tak będzie najszybciej dojść do działającego rdzenia.
+
+---
+
+# Roadmapa v1.1 / v1.2
+
+## v1.1
+
+* sesje rozmów
+* recent conversation memory
+* komenda `/trace`
+* komenda `/last`
+
+## v1.2
+
+* prosty web chat
+* panel proposed changes
+* ręczne approve/reject z UI
+
+## v1.3
+
+* Telegram adapter
+* to samo core, inny transport
+
+## v2
+
+* bardziej złożone narzędzia
+* shell exec z allowlistą
+* test runner
+* git diff reader
+
+---
+
+# Gotowy prompt do Codexa
+
+Poniżej masz wersję bardziej konkretną niż poprzednio.
+
+```text
+Build a local TypeScript agent system with a Main Agent and a Meta Agent.
+
+Goal:
+- The Main Agent talks to the user in a CLI chat, uses tools, and solves tasks.
+- The Meta Agent evaluates the Main Agent after each interaction and proposes safe configuration improvements.
+- The system must use LM Studio through its OpenAI-compatible API.
+
+Technical requirements:
+- Use Node.js + TypeScript.
+- Use the official openai npm package with a configurable baseURL pointing to LM Studio.
+- Use zod for schema validation.
+- Store data in local JSON files.
+
+Project structure:
+- src/index.ts
+- src/app/run-cli.ts
+- src/core/llm-client.ts
+- src/core/model-router.ts
+- src/core/run-main-agent.ts
+- src/core/run-meta-agent.ts
+- src/core/tool-runner.ts
+- src/core/trace-store.ts
+- src/core/config-store.ts
+- src/core/memory-store.ts
+- src/core/auto-apply.ts
+- src/agents/main-agent.ts
+- src/agents/meta-agent.ts
+- src/agents/prompts/main-system.ts
+- src/agents/prompts/meta-system.ts
+- src/tools/index.ts
+- src/tools/types.ts
+- src/tools/read-file.ts
+- src/tools/write-file.ts
+- src/tools/list-files.ts
+- src/tools/http-fetch.ts
+- src/schemas/config-schema.ts
+- src/schemas/trace-schema.ts
+- src/schemas/meta-output-schema.ts
+- src/schemas/memory-schema.ts
+- src/types/config.ts
+- src/types/trace.ts
+- src/types/memory.ts
+- src/types/tool.ts
+- src/types/llm.ts
+- src/utils/now.ts
+- src/utils/id.ts
+- src/utils/json.ts
+- src/utils/logger.ts
+
+Behavior requirements:
+- Main Agent runs first for each user message.
+- It must produce a trace containing:
+  - traceId
+  - sessionId
+  - userMessage
+  - finalAnswer
+  - usedModel
+  - temperature
+  - planSummary
+  - toolCalls
+  - steps
+  - startedAt
+  - finishedAt
+  - success
+  - error (optional)
+- Save the trace as JSON.
+- Then run the Meta Agent on that trace.
+- The Meta Agent must return:
+  - score (0..1)
+  - confidence (0..1)
+  - issues
+  - strengths
+  - summary
+  - proposedChanges
+- Save the meta evaluation as JSON.
+- Save the proposed config patch to proposed-config.json.
+
+Tool requirements:
+- Implement read_file
+- Implement write_file
+- Implement list_files
+- Implement http_fetch
+- Restrict all file operations to a workspaceRoot.
+- Restrict http_fetch to GET with a timeout and a max response size.
+
+Safety requirements:
+- The Meta Agent must NOT modify source code automatically.
+- In v1, it may only propose changes to:
+  - mainAgent.systemPrompt
+  - mainAgent.temperature
+  - mainAgent.enabledTools
+  - routing.defaultMainModel
+  - routing.defaultMetaModel
+- Auto-apply only if allowed by policies in current-config.json.
+- Reject any unknown config fields.
+- Validate all model JSON outputs with zod.
+
+Main Agent design:
+- Implement a small loop with max 3 tool iterations.
+- The Main Agent should first decide in JSON whether it needs a tool.
+- If yes, execute the tool, collect the result, and call the model again.
+- If not, it should return a final answer.
+- Do not rely on hidden reasoning.
+- Store only safe operational steps in traces.
+
+Meta Agent design:
+- It should analyze the trace and propose minimal safe changes.
+- It must be conservative, concise, and not propose code modifications.
+- It must output valid JSON only.
+
+CLI requirements:
+- Provide a simple interactive CLI chat.
+- Add commands:
+  - /exit
+  - /config
+  - /proposed
+  - /apply
+  - /reject
+  - /memory
+  - /help
+
+Initial data files:
+- data/current-config.json
+- data/proposed-config.json
+- data/long-term-memory.json
+- data/traces/
+
+Code quality:
+- Strong typing
+- Clean modular architecture
+- Helpful comments
+- Keep it easy to extend later with a web UI or Telegram adapter
+```
+
+Jeśli chcesz, następnym krokiem mogę Ci zrobić jeszcze **wersję “MVP ultra-lean”**, czyli tę samą architekturę, ale zredukowaną do może **8–10 plików**, żeby Codex szybciej dowiózł pierwszą działającą wersję.

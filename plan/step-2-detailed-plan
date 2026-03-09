@@ -1,0 +1,695 @@
+Sure—below is the concrete high-level + technical spec for step 2 (Signal transport) and step 2b (stdout mirror while running in Signal mode).
+
+Assumption: we keep the current TypeScript/Node.js core; Signal becomes a transport adapter, not a new agent.
+
+---
+
+# Goal of Step 2
+
+The system must:
+
+* handle inbound Signal messages
+* reply to Signal through a local REST wrapper
+* run every accepted message through the same pipeline:
+
+  * Main Agent
+  * trace persistence
+  * Meta Agent
+  * proposed config
+* accept messages only from one explicitly configured phone number
+* when running in `signal` mode, also print the entire conversation to stdout
+
+Treat stdout as **step 2b**—a simple observability/debug channel.
+
+---
+
+# Practical Technical Assumption
+
+Signal does not offer an official bot/API flow suitable for this integration, so the pragmatic option is:
+
+* `signal-cli`
+* the `signal-cli-rest-api` wrapper
+
+The most sensible modes for this project are:
+
+* `json-rpc`
+* `native`
+
+This remains an **unofficial integration**, but it fits a local agent.
+
+Important reminders:
+
+* device onboarding/linking can be fragile
+* do not aim for “zero-config” in step 2
+* ship setup + health-check documentation
+
+---
+
+# Stack
+
+* Node.js
+* TypeScript
+* existing agent core (no architectural changes)
+* `fetch` for talking to `signal-cli-rest-api`
+* optionally a small HTTP server (e.g. `express`)
+* `zod` for webhook/REST payload validation
+
+---
+
+# Functional Scope
+
+## Step 2
+
+1. App boots in `signal` mode.
+2. Listens for inbound Signal messages.
+3. Checks the sender.
+4. If sender ≠ allowed number:
+
+   * ignore the message
+   * log the rejection
+5. If sender == allowed number:
+
+   * map/create a session
+   * run the agent pipeline
+   * send the reply back to Signal
+   * persist trace/evaluation as before
+
+## Step 2b
+
+When running in `signal` mode, stdout shows:
+
+* inbound message
+* outbound answer
+* trace id
+* meta score / issues
+
+CLI is no longer for typing prompts; it becomes the local runtime log.
+
+---
+
+# Project Structure After Step 2
+
+```text
+agent-system/
+  src/
+    index.ts
+
+    app/
+      run-cli.ts
+      run-signal.ts
+
+    core/
+      process-user-turn.ts
+      session-store.ts
+      ...
+
+    transport/
+      types.ts
+      signal/
+        signal-client.ts
+        signal-webhook.ts
+        signal-dispatcher.ts
+        signal-stdout.ts
+        signal-auth.ts
+
+    schemas/
+      signal-schema.ts
+
+    types/
+      transport.ts
+      signal.ts
+
+  data/
+    current-config.json
+    proposed-config.json
+    long-term-memory.json
+    traces/
+    sessions.json
+```
+
+---
+
+# Where to Refactor
+
+Step 1 was “CLI first.” Step 2 needs a **shared turn orchestrator**.
+
+## New layer: `process-user-turn.ts`
+
+This becomes a shared function for CLI and Signal:
+
+```ts
+export async function processUserTurn(params: {
+  sessionId: string;
+  userMessage: string;
+  workspaceRoot: string;
+  channel: 'cli' | 'signal';
+  remoteUserId: string;
+}): Promise<{
+  trace: MainAgentTrace;
+  meta: MetaAgentResult;
+}>;
+```
+
+Responsibilities:
+
+1. run `runMainAgent`
+2. run `runMetaAgent`
+3. return the result to the transport adapter
+
+CLI and Signal become thin wrappers on top of this function.
+
+---
+
+# Domain Types
+
+## `src/types/transport.ts`
+
+```ts
+export type TransportMode = 'cli' | 'signal';
+
+export interface SignalTransportConfig {
+  enabled: boolean;
+  restBaseUrl: string;
+  localNumber: string;
+  allowedUserNumber: string;
+  webhookPort: number;
+  webhookPath: string;
+}
+```
+
+Add these fields to the main `AppConfig`.
+
+## `src/types/signal.ts`
+
+```ts
+export interface SignalInboundMessage {
+  envelopeId: string;
+  senderNumber: string;
+  recipientNumber: string;
+  timestamp: string;
+  messageText: string;
+}
+
+export interface SignalSendMessageInput {
+  message: string;
+  recipient: string;
+}
+```
+
+---
+
+# Configuration
+
+## Extend `data/current-config.json`
+
+Add:
+
+```json
+{
+  "app": {
+    "mode": "cli"
+  },
+  "signal": {
+    "enabled": false,
+    "restBaseUrl": "http://127.0.0.1:8080",
+    "localNumber": "+48...",
+    "allowedUserNumber": "+48...",
+    "webhookPort": 3030,
+    "webhookPath": "/signal/webhook"
+  }
+}
+```
+
+### Security Principle
+
+For step 2:
+
+* exactly one `allowedUserNumber`
+* if the number doesn’t match, do not respond
+* no “allow all” fallback
+
+This is a hard policy, not guidance.
+
+---
+
+# Webhook vs Polling
+
+Two viable options:
+
+## Option A – webhook (preferred)
+
+`signal-cli-rest-api` pushes events to our local HTTP listener.
+
+Pros:
+
+* simpler runtime
+* lower latency
+* cleaner flow
+
+## Option B – polling
+
+Our app polls the REST API every N seconds.
+
+Pros:
+
+* fewer webhook requirements
+
+Cons:
+
+* easier to create duplicates
+* harder acknowledgement flow
+
+### Decision for Step 2
+
+* implement webhook first
+* treat polling as a future enhancement
+
+---
+
+# Signal Modules
+
+## `src/transport/signal/signal-client.ts`
+
+REST client for:
+
+* `send`
+* health check
+* optional helpers
+
+```ts
+export async function sendSignalMessage(params: {
+  restBaseUrl: string;
+  localNumber: string;
+  recipient: string;
+  message: string;
+}): Promise<void>;
+
+export async function getSignalHealth(restBaseUrl: string): Promise<{
+  ok: boolean;
+  version?: string;
+  mode?: string;
+}>;
+```
+
+## `src/transport/signal/signal-auth.ts`
+
+Access-policy helper:
+
+```ts
+export function isAllowedSignalSender(params: {
+  senderNumber: string;
+  allowedUserNumber: string;
+}): boolean;
+```
+
+Normalize numbers (trim, E.164-like comparison). No aliases in step 2.
+
+## `src/transport/signal/signal-webhook.ts`
+
+Small HTTP server responsible for:
+
+* receiving POST webhooks
+* validating payloads
+* extracting one or many messages
+* passing them to the dispatcher
+
+## `src/transport/signal/signal-dispatcher.ts`
+
+Orchestrates:
+
+1. sender validation
+2. session lookup
+3. `processUserTurn`
+4. sending replies back to Signal
+5. stdout mirroring
+
+## `src/transport/signal/signal-stdout.ts`
+
+Dedicated to step 2b.
+
+```ts
+export function logSignalConversationTurn(params: {
+  senderNumber: string;
+  userMessage: string;
+  assistantMessage: string;
+  traceId: string;
+  metaScore: number;
+  issues: string[];
+}): void;
+```
+
+Desired output:
+
+```text
+[signal] from +48...
+user: jakie sa newsy na filmweb.pl
+assistant: ...
+trace: trace_...
+meta: 0.82
+```
+
+---
+
+# Session Handling
+
+## Problem
+
+CLI reuses one session ID per runtime; Signal needs stable session mapping.
+
+## Solution
+
+Add `src/core/session-store.ts`.
+
+File:
+
+* `data/sessions.json`
+
+Example map:
+
+```json
+{
+  "signal:+48123123123": "session_20260308_abcd1234"
+}
+```
+
+API:
+
+```ts
+export async function getOrCreateSessionId(key: string): Promise<string>;
+```
+
+For step 2 the key can be `signal:${senderNumber}`. Even with one user, keep it transport-agnostic.
+
+---
+
+# Zod Schemas
+
+## `src/schemas/signal-schema.ts`
+
+Validate:
+
+* inbound webhook payload
+* sender number
+* message body
+* timestamp
+
+Signal payloads can be verbose—create helpers that extract only the needed fields. Ignore attachments/reactions in this step.
+
+---
+
+# Runtime Orchestration
+
+## `src/app/run-signal.ts`
+
+Entry point for Signal mode.
+
+Steps:
+
+1. load config
+2. verify `signal.enabled`
+3. health check the REST wrapper
+4. start the webhook server
+5. log status to stdout
+6. process messages
+
+CLI remains a separate transport.
+
+## `src/index.ts`
+
+Bootstrapping should choose transport:
+
+```ts
+if (config.app.mode === 'cli') {
+  await runCli();
+} else if (config.app.mode === 'signal') {
+  await runSignal();
+}
+```
+
+---
+
+# Flow of a Signal Message
+
+1. Signal user sends a message.
+2. `signal-cli-rest-api` sends an event to our webhook.
+3. Payload is validated.
+4. Sender number is checked.
+5. If sender is not allowed:
+
+   * log the rejection
+   * stop
+6. If sender is allowed:
+
+   * fetch or create a session ID
+   * run `processUserTurn`
+   * send the reply back to Signal
+   * mirror the turn to stdout
+
+---
+
+# Logging and Observability
+
+## In `signal` mode
+
+Stdout should show:
+
+* server startup
+* Signal REST health
+* inbound accepted
+* inbound rejected
+* outbound sent
+* trace ID
+* meta score
+
+This is an operational log, not an interactive prompt.
+
+### Example
+
+```text
+[signal] webhook listening on :3030/signal/webhook
+[signal] accepted sender +48123123123
+[signal] user: jakie sa newsy na filmweb.pl
+[signal] assistant: Na Filmwebie widze...
+[signal] trace: trace_20260308_abcd1234
+[signal] meta score: 0.81
+```
+
+---
+
+# Security
+
+## Hard rules for Step 2
+
+1. exactly one allowed number
+2. no wildcards
+3. no replies to unknown senders
+4. no auto-trusting new users
+5. number configured locally, not via prompt
+
+## Out of scope (future steps)
+
+* multi-user support
+* per-group ACLs
+* roles/admin permissions
+* safety-number authorization
+* onboarding new contacts through the agent
+
+---
+
+# Config / Meta-Agent Policy
+
+Meta Agent must **not** propose changes to:
+
+* `signal.allowedUserNumber`
+* `signal.localNumber`
+* `signal.restBaseUrl`
+* `app.mode`
+
+These are operational/security fields. Proposed config patches remain limited to the step-1 safe fields.
+
+---
+
+# README / Setup Docs
+
+Add two documents:
+
+## `README.md`
+
+Include:
+
+* how to switch the mode to `signal`
+* which env/config entries to set
+
+## `docs/signal-setup.md`
+
+Describe:
+
+1. installing `signal-cli-rest-api`
+2. exposing the REST endpoint on localhost
+3. registering or linking the Signal number
+4. health checks
+5. starting the agent
+
+Important note:
+
+* linking `signal-cli` can be unstable; document manual retry steps
+
+---
+
+# Packages / Dependencies
+
+If you use Express for the webhook:
+
+```json
+{
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0"
+  }
+}
+```
+
+You can use `node:http`, but Express keeps webhook routing straightforward.
+
+**Recommendation:** use Express for step 2.
+
+---
+
+# Tests
+
+## Minimum scope
+
+1. unit test `isAllowedSignalSender`
+2. unit test the Signal payload parser
+3. unit test `getOrCreateSessionId`
+4. integration-like test of the dispatcher:
+
+   * fake inbound Signal payload
+   * fake `sendSignalMessage`
+   * expect `processUserTurn` to run
+
+## Manual smoke test
+
+1. start `signal-cli-rest-api`
+2. run the agent in `signal` mode
+3. send a message from the allowed number
+4. verify the reply in Signal
+5. check stdout logs
+6. inspect trace + meta output
+7. send a message from a different number
+8. confirm no reply and a logged rejection
+
+---
+
+# Implementation Order
+
+## Stage 1
+
+Extract the shared turn orchestrator:
+
+* `process-user-turn.ts`
+* `session-store.ts`
+
+## Stage 2
+
+Add Signal config/types/schemas.
+
+## Stage 3
+
+Add REST client + health check.
+
+## Stage 4
+
+Add webhook listener + dispatcher.
+
+## Stage 5
+
+Add stdout mirror for the Signal mode.
+
+## Stage 6
+
+Wire `index.ts` to honor `app.mode`.
+
+## Stage 7
+
+Add docs and smoke-test instructions.
+
+---
+
+# Ready Prompt for Execution
+
+```text
+Implement step 2 of the local TypeScript agent system by adding a Signal transport via signal-cli-rest-api.
+
+Goals:
+- Reuse the existing Main Agent / Meta Agent pipeline.
+- Add a transport mode switch: cli | signal.
+- In signal mode, accept inbound Signal messages, run the same agent pipeline, and send replies back through signal-cli-rest-api.
+- Restrict Signal access to exactly one allowed sender phone number.
+- Ignore or reject messages from all other senders.
+- In signal mode, also print the full conversation flow to stdout for observability.
+
+Technical requirements:
+- Keep the existing TypeScript architecture modular.
+- Extract a shared processUserTurn() orchestration function for both CLI and Signal.
+- Add Signal config to current-config.json:
+  - signal.enabled
+  - signal.restBaseUrl
+  - signal.localNumber
+  - signal.allowedUserNumber
+  - signal.webhookPort
+  - signal.webhookPath
+  - app.mode
+- Add:
+  - src/app/run-signal.ts
+  - src/core/process-user-turn.ts
+  - src/core/session-store.ts
+  - src/transport/types.ts
+  - src/transport/signal/signal-client.ts
+  - src/transport/signal/signal-webhook.ts
+  - src/transport/signal/signal-dispatcher.ts
+  - src/transport/signal/signal-stdout.ts
+  - src/transport/signal/signal-auth.ts
+  - src/schemas/signal-schema.ts
+  - src/types/transport.ts
+  - src/types/signal.ts
+
+Behavior requirements:
+- On inbound Signal message:
+  - validate webhook payload
+  - extract sender number and text
+  - check sender against allowedUserNumber
+  - if not allowed, log rejection and do nothing else
+  - if allowed, get or create a session id for that sender
+  - call processUserTurn()
+  - send the final answer back to Signal
+  - log the conversation to stdout
+- Reuse existing trace/meta/proposed-config persistence flow.
+- Keep Meta Agent config changes limited to step-1 safe fields only.
+
+Implementation preferences:
+- Use express for the webhook listener.
+- Use zod for Signal payload validation.
+- Store sessions in data/sessions.json.
+- Keep stdout logging simple and explicit.
+
+Security:
+- Single allowed Signal sender only in this step.
+- No wildcard access.
+- No auto-approval of new users.
+- Do not let the meta-agent modify Signal transport security settings.
+```
+
+---
+
+# Two Practical Notes
+
+## 1. Signal onboarding lives outside the core app
+
+Do not embed number registration/linking into the agent itself. Keep it as manual operational setup.
+
+## 2. Stdout mirror is not the only log
+
+It is convenient for developers, but trace JSON remains the source of truth.
