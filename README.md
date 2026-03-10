@@ -22,6 +22,16 @@ cp .env.example .env
 npm run dev
 ```
 
+## Tryb Telegram
+
+1. Utworz bota przez BotFather i pobierz `botToken`.
+2. W `data/current-config.json` ustaw:
+   - `app.mode` na `telegram`
+   - `telegram.enabled` na `true`
+   - `telegram.botToken`, `telegram.allowedChatId` (i opcjonalnie `telegram.allowedUserId`)
+3. Uruchom `npm run dev`.
+4. Agent bedzie odbierac wiadomosci przez long polling i logowac rozmowe do stdout.
+
 ## Co robi system
 
 - Main Agent obsluguje wiadomosc usera i moze uzywac narzedzi.

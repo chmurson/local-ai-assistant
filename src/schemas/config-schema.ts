@@ -46,14 +46,15 @@ const modelRoutingConfigSchema = z
   })
   .strict();
 
-const signalTransportConfigSchema = z
+const telegramTransportConfigSchema = z
   .object({
     enabled: z.boolean(),
-    restBaseUrl: z.string().min(1),
-    localNumber: z.string().min(1),
-    allowedUserNumber: z.string().min(1),
-    webhookPort: z.number().int().positive(),
-    webhookPath: z.string().min(1)
+    botToken: z.string().min(1),
+    allowedChatId: z.string().min(1),
+    allowedUserId: z.string().min(1).optional(),
+    pollingIntervalMs: z.number().int().positive(),
+    pollingTimeoutSec: z.number().int().positive(),
+    maxUpdatesPerPoll: z.number().int().positive()
   })
   .strict();
 
@@ -61,7 +62,7 @@ export const appConfigSchema = z
   .object({
     app: z
       .object({
-        mode: z.enum(['cli', 'signal'])
+        mode: z.enum(['cli', 'telegram'])
       })
       .strict()
       .default({ mode: 'cli' }),
@@ -69,7 +70,7 @@ export const appConfigSchema = z
     metaAgent: agentConfigSchema,
     policies: policyConfigSchema,
     routing: modelRoutingConfigSchema,
-    signal: signalTransportConfigSchema.optional()
+    telegram: telegramTransportConfigSchema.optional()
   })
   .strict();
 

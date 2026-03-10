@@ -5,8 +5,7 @@ import { resolve } from 'node:path';
 import { createId } from '../utils/id.js';
 import { loadCurrentConfig, loadProposedConfig, saveProposedConfig } from '../core/config-store.js';
 import { loadLongTermMemory } from '../core/memory-store.js';
-import { runMainAgent } from '../core/run-main-agent.js';
-import { runMetaAgent } from '../core/run-meta-agent.js';
+import { processUserTurn } from '../core/process-user-turn.js';
 
 function printHelp(): void {
   console.log('/help     - show commands');
@@ -81,21 +80,26 @@ export async function runCli(): Promise<void> {
       }
 
       try {
-        const trace = await runMainAgent({ sessionId, userMessage: line, workspaceRoot });
-        console.log(`\nAgent> ${trace.finalAnswer}`);
-
-        const metaResult = await runMetaAgent({ trace });
+        const result = await processUserTurn({
+          sessionId,
+          userMessage: line,
+          workspaceRoot,
+          channel: 'cli',
+          remoteUserId: 'cli-user'
+        });
+        console.log(`\nAgent> ${result.trace.finalAnswer}`);
+        const meta = await result.metaPromise;
         console.log('\nMeta>');
-        console.log(`score=${metaResult.evaluation.score.toFixed(2)} confidence=${metaResult.evaluation.confidence.toFixed(2)}`);
-        if (metaResult.evaluation.issues.length > 0) {
-          console.log(`issues: ${metaResult.evaluation.issues.join(' | ')}`);
+        console.log(`score=${meta.evaluation.score.toFixed(2)} confidence=${meta.evaluation.confidence.toFixed(2)}`);
+        if (meta.evaluation.issues.length > 0) {
+          console.log(`issues: ${meta.evaluation.issues.join(' | ')}`);
         }
-        if (metaResult.applied.length > 0 || metaResult.rejected.length > 0) {
-          console.log(`applied: ${metaResult.applied.join(', ') || 'none'}`);
-          console.log(`rejected: ${metaResult.rejected.join(', ') || 'none'}`);
+        if (meta.applied.length > 0 || meta.rejected.length > 0) {
+          console.log(`applied: ${meta.applied.join(', ') || 'none'}`);
+          console.log(`rejected: ${meta.rejected.join(', ') || 'none'}`);
         }
         const pending = await loadProposedConfig();
-        console.log(`proposed(raw): ${JSON.stringify(metaResult.evaluation.proposedChanges)}`);
+        console.log(`proposed(raw): ${JSON.stringify(meta.evaluation.proposedChanges)}`);
         console.log(`pending: ${JSON.stringify(pending ?? {})}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'unknown runtime error';

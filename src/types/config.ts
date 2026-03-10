@@ -25,21 +25,23 @@ export interface ModelRoutingConfig {
 }
 
 /**
- * Signal transport configuration
+ * Telegram transport configuration
  */
-export interface SignalTransportConfig {
-  /** Whether signal transport is enabled */
+export interface TelegramTransportConfig {
+  /** Whether Telegram transport is enabled */
   enabled: boolean;
-  /** Base URL for the signal-cli-rest-api (e.g., http://127.0.0.1:8080) */
-  restBaseUrl: string;
-  /** Local Signal number (the agent's own number) */
-  localNumber: string;
-  /** Allowed remote user number - exactly one allowed sender */
-  allowedUserNumber: string;
-  /** Port for webhook listener */
-  webhookPort: number;
-  /** Path for webhook endpoint */
-  webhookPath: string;
+  /** Telegram bot token from BotFather */
+  botToken: string;
+  /** Exactly one allowed chat identifier */
+  allowedChatId: string;
+  /** Optional exact user identifier inside the allowed chat */
+  allowedUserId?: string;
+  /** Delay between polling iterations in milliseconds */
+  pollingIntervalMs: number;
+  /** Telegram long polling timeout in seconds */
+  pollingTimeoutSec: number;
+  /** Maximum updates fetched per polling request */
+  maxUpdatesPerPoll: number;
 }
 
 /**
@@ -47,12 +49,12 @@ export interface SignalTransportConfig {
  */
 export interface AppConfig {
   app: {
-    /** Operating mode: 'cli' or 'signal' */
-    mode: 'cli' | 'signal';
+    /** Operating mode: 'cli' or 'telegram' */
+    mode: 'cli' | 'telegram';
   };
   mainAgent: AgentConfig;
   metaAgent: AgentConfig;
   policies: PolicyConfig;
   routing: ModelRoutingConfig;
-  signal?: SignalTransportConfig; // Optional for backwards compatibility
+  telegram?: TelegramTransportConfig;
 }
