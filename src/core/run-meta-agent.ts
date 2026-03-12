@@ -8,7 +8,7 @@ import {
   saveCurrentConfig,
   saveProposedConfig
 } from './config-store.js';
-import { saveMetaEvaluation, saveMetaHistoryRecord } from './trace-store.js';
+import { loadMetaHistory, saveMetaEvaluation, saveMetaHistoryRecord } from './trace-store.js';
 import { createId } from '../utils/id.js';
 import { nowIso } from '../utils/now.js';
 
@@ -38,11 +38,34 @@ function buildPendingPatch(
   return pending;
 }
 
+function computeMetaUsefulness(params: {
+  priorHistory: Awaited<ReturnType<typeof loadMetaHistory>>;
+  proposedChanges: NonNullable<Parameters<typeof applySafePatch>[0]['patch']>;
+  applied: string[];
+}): boolean {
+  const hasProposal = Object.keys(params.proposedChanges).length > 0;
+  if (!hasProposal && params.applied.length === 0) {
+    return false;
+  }
+
+  const proposalKey = JSON.stringify(params.proposedChanges);
+  const repeatedProposal = [...params.priorHistory]
+    .reverse()
+    .some((record) => record.status === 'completed' && JSON.stringify(record.proposedChanges) === proposalKey);
+
+  if (repeatedProposal) {
+    return false;
+  }
+
+  return params.applied.length > 0 || hasProposal;
+}
+
 export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
   const metaRunId = createId('meta_run');
   const fallbackStartedAt = nowIso();
   const usedModel = pickMetaAgentModel(config);
+  const priorHistory = await loadMetaHistory();
 
   try {
     const evaluation = await executeMetaAgent({ trace: params.trace, config });
@@ -72,7 +95,11 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
       proposedChanges: evaluation.proposedChanges,
       applied: patchResult.applied,
       rejected: patchResult.rejected,
-      useful: patchResult.applied.length > 0 || Object.keys(evaluation.proposedChanges).length > 0
+      useful: computeMetaUsefulness({
+        priorHistory,
+        proposedChanges: evaluation.proposedChanges,
+        applied: patchResult.applied
+      })
     });
 
     return {

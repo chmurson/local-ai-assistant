@@ -19,6 +19,11 @@ const decisionSchema = z
   })
   .strict();
 
+function isPlaceholderFinalAnswer(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return normalized === 'done' || normalized === 'done.';
+}
+
 function buildMemorySummary(memory: LongTermMemory): string {
   const parts = [
     memory.userPreferences.preferredLanguage
@@ -82,6 +87,7 @@ async function getDecisionWithRetry(params: {
   const repairPrompt = [
     'Rewrite your previous answer into strict JSON only.',
     'Schema: {"planSummary":string,"shouldUseTool":boolean,"toolName"?:string,"toolInput"?:object,"finalAnswer"?:string}',
+    'If shouldUseTool is false, finalAnswer must contain the user-facing answer.',
     'Return one JSON object, no markdown, no extra text.',
     `Previous output: ${first.text}`
   ].join('\n');
@@ -173,6 +179,7 @@ export async function executeMainAgent(params: {
       const decisionPrompt = [
         'Return JSON only with schema:',
         '{"planSummary":string,"shouldUseTool":boolean,"toolName"?:string,"toolInput"?:object,"finalAnswer"?:string}',
+        'If shouldUseTool is false, finalAnswer is required and must contain the user-facing answer.',
         `User message: ${params.userMessage}`,
         `Iteration: ${i + 1}/${maxToolIterations + 1}`,
         toolCalls.length > 0
@@ -196,8 +203,14 @@ export async function executeMainAgent(params: {
       pushStep(steps, 'reasoning', `Agent decided: ${decision.planSummary}`);
 
       if (!decision.shouldUseTool) {
-        finalAnswer = decision.finalAnswer ?? 'Done.';
-        pushStep(steps, 'final', 'Agent returned a final answer without additional tools.');
+        finalAnswer = decision.finalAnswer?.trim() ?? '';
+        pushStep(
+          steps,
+          'final',
+          finalAnswer
+            ? 'Agent returned a direct final answer without additional tools.'
+            : 'Agent skipped tools but did not provide finalAnswer; falling back to final answer generation.'
+        );
         break;
       }
 
@@ -291,7 +304,10 @@ export async function executeMainAgent(params: {
         ]
       });
 
-      finalAnswer = finalizeResponse.text.trim() || 'Done.';
+      finalAnswer = finalizeResponse.text.trim();
+      if (!finalAnswer) {
+        finalAnswer = planSummary || 'I could not produce a final answer.';
+      }
       pushStep(steps, 'final', 'Agent returned a final answer after tool execution.');
     }
   } catch (caughtError) {
@@ -299,6 +315,13 @@ export async function executeMainAgent(params: {
     error = caughtError instanceof Error ? caughtError.message : 'Unknown main agent error';
     finalAnswer = 'Przepraszam, wystapil blad podczas realizacji zadania.';
     pushStep(steps, 'final', `Agent failed: ${error}`);
+  }
+
+  if (success && isPlaceholderFinalAnswer(finalAnswer)) {
+    success = false;
+    error = 'Final answer fell back to placeholder output.';
+    pushStep(steps, 'final', error);
+    finalAnswer = planSummary || 'I could not produce a final answer.';
   }
 
   const trace: MainAgentTrace = {
