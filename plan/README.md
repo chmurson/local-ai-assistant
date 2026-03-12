@@ -4,6 +4,7 @@ This directory now has two layers:
 
 - `plan/steps/` is the current source of truth for step status and scope.
 - legacy `step-*-requirements` and `step-*-detailed-plan` files are kept as historical references.
+- `plan/steps/_template.md` is the default structure for all future steps.
 
 ## Step Status
 
@@ -25,6 +26,8 @@ Each step file in `plan/steps/` should contain:
 5. Open issues / follow-ups
 6. Relevant files
 7. Legacy references if older planning artifacts exist
+
+Use `plan/steps/_template.md` when creating the next step so the structure stays consistent.
 
 ## Current Gaps In Planning
 

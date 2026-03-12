@@ -1,3 +1,8 @@
+LEGACY REFERENCE
+Current status/source of truth:
+- plan/README.md
+- plan/steps/step-3.md
+
 Document and harden the Telegram transport after the initial step-2 implementation.
 
 Requirements:

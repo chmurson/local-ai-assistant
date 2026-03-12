@@ -1,3 +1,8 @@
+LEGACY REFERENCE
+Current status/source of truth:
+- plan/README.md
+- plan/steps/step-1.md
+
 Jasne — poniżej masz **konkretny technical spec plik po pliku** dla **v1: agent + meta-agent pod LM Studio**, tak żebyś mógł to prawie wprost wkleić do Codexa.
 
 Założenie: **TypeScript, Node.js, CLI first, JSON storage, bez automatycznej edycji kodu przez meta-agenta**.

@@ -1,6 +1,6 @@
 # Step 4
 
-Status: planned  
+Status: done  
 Type: process  
 Updated: 2026-03-12
 
@@ -19,13 +19,13 @@ The previous planning layout made it hard to answer basic execution questions:
 
 ## Acceptance
 
-- [ ] One planning index exists and is maintained
-- [ ] Every step has an explicit status
-- [ ] Every step has a consistent structure
-- [ ] Planned work is separated from completed implementation summaries
-- [ ] Open follow-ups are tracked per step
-- [ ] Legacy planning artifacts are clearly marked as references, not the primary status source
-- [ ] Future steps follow the new structure by default
+- [x] One planning index exists and is maintained
+- [x] Every step has an explicit status
+- [x] Every step has a consistent structure
+- [x] Planned work is separated from completed implementation summaries
+- [x] Open follow-ups are tracked per step
+- [x] Legacy planning artifacts are clearly marked as references, not the primary status source
+- [x] Future steps follow the new structure by default
 
 ## Planned Work
 
@@ -42,15 +42,27 @@ The previous planning layout made it hard to answer basic execution questions:
 4. Treat older `step-*-requirements` and `step-*-detailed-plan` files as historical context only.
 5. Update future steps in-place as work lands, instead of creating disconnected summaries.
 
+## Implementation Summary
+
+Step 4 introduced the new planning system:
+
+- `plan/README.md` is now the planning index and status board
+- `plan/steps/` contains one structured file per step
+- `plan/steps/_template.md` defines the default shape for future steps
+- older planning files are explicitly marked as legacy references
+- the main `README.md` now points contributors to the planning index
+
 ## Open Issues / Follow-Ups
 
 - Decide whether older planning files should eventually be migrated or left as-is.
 - Decide whether plan status should also be mirrored in the main README.
 - Consider adding a changelog or ADR directory once architectural decisions grow larger.
+- Decide whether each step should eventually get its own folder instead of one markdown file.
 
 ## Relevant Files
 
 - `plan/README.md`
+- `plan/steps/_template.md`
 - `plan/steps/step-1.md`
 - `plan/steps/step-2.md`
 - `plan/steps/step-3.md`

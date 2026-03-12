@@ -1,3 +1,8 @@
+LEGACY REFERENCE
+Current status/source of truth:
+- plan/README.md
+- plan/steps/step-1.md
+
 Build a local agent system in TypeScript.
 
 Requirements:

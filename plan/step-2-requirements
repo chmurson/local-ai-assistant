@@ -1,3 +1,8 @@
+LEGACY REFERENCE
+Current status/source of truth:
+- plan/README.md
+- plan/steps/step-2.md
+
 Build step 2 of the local agent system: add a Telegram transport.
 
 Requirements:

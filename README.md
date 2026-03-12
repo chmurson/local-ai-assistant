@@ -2,6 +2,10 @@
 
 TypeScriptowy lokalny system agentowy pod LM Studio (OpenAI-compatible API).
 
+## Status projektu
+
+Aktualny status krokow i plan dalszych prac jest w `plan/README.md`.
+
 ## Szybki start
 
 1. Zainstaluj zaleznosci:

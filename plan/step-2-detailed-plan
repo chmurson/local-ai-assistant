@@ -1,3 +1,8 @@
+LEGACY REFERENCE
+Current status/source of truth:
+- plan/README.md
+- plan/steps/step-2.md
+
 Sure - below is the rebuilt high-level + technical spec for step 2 (Telegram transport) and step 2b (stdout mirror while running in Telegram mode).
 
 Assumption: we keep the current TypeScript/Node.js core; Telegram is a transport adapter, not a new agent.
