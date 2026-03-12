@@ -49,7 +49,7 @@ Step 4 introduced the new planning system:
 - `plan/README.md` is now the planning index and status board
 - `plan/steps/` contains one structured file per step
 - `plan/steps/_template.md` defines the default shape for future steps
-- older planning files are explicitly marked as legacy references
+- old duplicated planning files were removed after the new structure replaced them
 - the main `README.md` now points contributors to the planning index
 
 ## Open Issues / Follow-Ups

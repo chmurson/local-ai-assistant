@@ -43,8 +43,3 @@ Step 3 cleaned up the rough edges from the initial Telegram integration:
 - `data/current-config.json`
 - `README.md`
 - `docs/telegram-setup.md`
-
-## Legacy References
-
-- `plan/step-3-requirements`
-- `plan/step-3-detailed-plan`

@@ -47,8 +47,3 @@ This is the foundation reused by later transports like Telegram.
 - `src/core/trace-store.ts`
 - `src/core/config-store.ts`
 - `src/core/memory-store.ts`
-
-## Legacy References
-
-- `plan/step-1-requirements`
-- `plan/step-1-detailed-plan`

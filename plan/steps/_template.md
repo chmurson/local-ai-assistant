@@ -28,7 +28,3 @@ Describe the concrete goal of the step in one short paragraph.
 
 - `path/to/file`
 - `path/to/file`
-
-## Legacy References
-
-- Add old planning files here if this step originated from a previous format.

@@ -49,8 +49,3 @@ Telegram remains a transport layer, not a separate agent implementation.
 - `src/transport/telegram/telegram-auth.ts`
 - `src/transport/telegram/telegram-stdout.ts`
 - `src/core/telegram-offset-store.ts`
-
-## Legacy References
-
-- `plan/step-2-requirements`
-- `plan/step-2-detailed-plan`

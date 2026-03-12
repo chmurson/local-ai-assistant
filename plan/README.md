@@ -1,9 +1,8 @@
 # Plan Index
 
-This directory now has two layers:
+This directory now has one source of truth:
 
-- `plan/steps/` is the current source of truth for step status and scope.
-- legacy `step-*-requirements` and `step-*-detailed-plan` files are kept as historical references.
+- `plan/steps/` holds the step-by-step status and scope.
 - `plan/steps/_template.md` is the default structure for all future steps.
 
 ## Step Status
@@ -25,7 +24,6 @@ Each step file in `plan/steps/` should contain:
 4. Implementation summary or planned work
 5. Open issues / follow-ups
 6. Relevant files
-7. Legacy references if older planning artifacts exist
 
 Use `plan/steps/_template.md` when creating the next step so the structure stays consistent.
 
@@ -35,6 +33,7 @@ Use `plan/steps/_template.md` when creating the next step so the structure stays
 - Requirements and implementation summaries were mixed together.
 - There was no single index showing which steps were done vs planned.
 - Open follow-ups were not tracked consistently.
+- Older plan files created noise once the new step structure became the primary workflow.
 
 ## Next Direction
 
