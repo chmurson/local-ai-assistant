@@ -1,91 +1,97 @@
-# Local Agent System - Technical Documentation
+# Local Agent System - Technical Reference
 
 ## Overview
 
-The Local Agent System is a TypeScript-based autonomous coding assistant that operates through an OpenAI-compatible API (compatible with LM Studio). It features two specialized agents - a Main Agent for executing tasks and a Meta Agent for self-improvement through trace analysis.
+Local Agent System is a TypeScript agent runtime built around an OpenAI-compatible API such as LM Studio.
 
-## Architecture
+The repo currently supports:
 
-### Core Components
+- a shared main-agent + meta-agent pipeline
+- two transports: `cli` and `telegram`
+- local JSON persistence for config, traces, memory, sessions, and Telegram offsets
+- step-based planning docs under `plan/`
 
-```
-local-agent/
-├── src/
-│   ├── agents/          # Agent implementations
-│   │   ├── main-agent.ts    # Main execution agent
-│   │   ├── meta-agent.ts    # Self-improvement agent
-│   │   └── prompts/         # System prompt templates
-│   ├── app/             # Application entry points
-│   │   └── run-cli.ts       # CLI interface
-│   ├── core/            # Core infrastructure
-│   │   ├── llm-client.ts    # LLM API integration
-│   │   ├── model-router.ts  # Model selection logic
-│   │   └── tool-runner.ts   # Tool execution engine
-│   ├── tools/           # Available tool definitions
-│   │   ├── read-file.ts
-│   │   ├── write-file.ts
-│   │   ├── list-files.ts
-│   │   ├── http-fetch.ts
-│   │   └── extract-text.ts
-│   ├── types/           # TypeScript type definitions
-│   │   ├── config.ts
-│   │   ├── trace.ts
-│   │   └── memory.ts
-│   ├── schemas/         # Zod validation schemas
-│   └── utils/           # Utility functions
-├── data/                # Runtime data and traces
-├── plan/                # Planning artifacts
-└── dist/                # Compiled output
-```
+## Runtime Model
+
+Each accepted user turn follows the same high-level flow:
+
+1. load config and memory
+2. run Main Agent
+3. persist main trace
+4. run Meta Agent
+5. persist meta evaluation
+6. save proposed config patch
+7. apply safe config changes when allowed by policy
+
+The shared orchestration entrypoint is `src/core/process-user-turn.ts`.
+
+## Transports
+
+### CLI
+
+CLI mode is implemented in `src/app/run-cli.ts`.
+
+Supported commands:
+
+- `/help`
+- `/config`
+- `/proposed`
+- `/apply`
+- `/reject`
+- `/memory`
+- `/exit`
+
+### Telegram
+
+Telegram mode is implemented through:
+
+- `src/app/run-telegram.ts`
+- `src/transport/telegram/telegram-client.ts`
+- `src/transport/telegram/telegram-poller.ts`
+- `src/transport/telegram/telegram-dispatcher.ts`
+- `src/transport/telegram/telegram-auth.ts`
+- `src/transport/telegram/telegram-stdout.ts`
+- `src/core/telegram-offset-store.ts`
+
+Current Telegram behavior:
+
+- long polling via `getUpdates`
+- exact `allowedChatId` gate
+- optional exact `allowedUserId` gate
+- session reuse per Telegram source
+- stdout mirror for observability
+- only the assistant reply is sent back to Telegram
+- meta evaluation is kept in stdout and traces, not sent to chat
 
 ## Agents
 
 ### Main Agent
 
-The Main Agent is responsible for processing user requests and executing tools to fulfill them.
+Responsibilities:
 
-**Key Responsibilities:**
-- Parse user input and determine required actions
-- Select appropriate tools from the registry
-- Execute tool calls with retry logic
-- Auto-postprocess HTML content (extract plain text)
-- Generate final responses after tool execution
+- interpret user input
+- decide whether tools are needed
+- execute allowed tool calls
+- build the final answer
+- persist an execution trace
 
-**Tool Iteration Strategy:**
-- Maximum 3 tool calls per run (configurable via `policies.maxToolCallsPerRun`)
-- Iterative decision-making with JSON schema validation
-- Automatic repair attempts for invalid JSON output
+Notable behavior:
 
-**Tools Available:**
-| Tool Name | Description |
-|-----------|-------------|
-| `read_file` | Read file content from workspace |
-| `write_file` | Write content to workspace files |
-| `list_files` | List directory contents |
-| `http_fetch` | Fetch web pages via HTTP |
-| `extract_text` | Extract plain text from HTML |
-
-**Configuration:**
-```typescript
-mainAgent: {
-  systemPrompt: string;        // Base prompt for agent behavior
-  temperature: number;         // LLM temperature (0-2)
-  maxOutputTokens: number;     // Maximum output tokens
-  enabledTools: ToolName[];    // Enabled tool list
-}
-```
+- max tool calls per run is policy-controlled
+- HTML fetched from the web can be postprocessed into plain text
+- workspace boundaries are enforced for file access
 
 ### Meta Agent
 
-The Meta Agent analyzes execution traces to evaluate performance and propose configuration improvements.
+Responsibilities:
 
-**Key Responsibilities:**
-- Evaluate main agent trace quality (0.0 - 1.0 score)
-- Identify issues and strengths in execution
-- Propose safe configuration changes
-- Generate confidence scores for evaluations
+- evaluate main-agent traces
+- score run quality
+- identify issues/strengths
+- propose safe config changes
 
-**Allowed Configuration Changes:**
+Allowed patch surface:
+
 - `mainAgent.systemPrompt`
 - `mainAgent.temperature`
 - `mainAgent.enabledTools`
@@ -93,280 +99,100 @@ The Meta Agent analyzes execution traces to evaluate performance and propose con
 - `routing.defaultMainModel`
 - `routing.defaultMetaModel`
 
-**Evaluation Criteria:**
-- Execution success/failure
-- Tool call efficiency
-- Response quality
-- Safety compliance
+## Configuration
 
-## Configuration System
+Primary runtime config lives in `data/current-config.json`.
 
-### Config Structure (`AppConfig`)
+Top-level config sections:
 
-```typescript
-{
-  mainAgent: {
-    systemPrompt: string;
-    temperature: number;
-    maxOutputTokens: number;
-    enabledTools: ToolName[];
-  };
-  metaAgent: {
-    temperature: number;
-    maxOutputTokens: number;
-  };
-  routing: {
-    defaultMainModel: string;
-    defaultMetaModel: string;
-    modelRules?: Array<{
-      pattern: RegExp;
-      mainModel?: string;
-      metaModel?: string;
-    }>;
-  };
-  policies: {
-    maxToolCallsPerRun: number;
-    toolAllowlist: ToolName[];
-  };
-}
-```
+- `app`
+- `mainAgent`
+- `metaAgent`
+- `policies`
+- `routing`
+- `telegram`
 
-### Model Routing
+Important notes:
 
-Model selection is handled by `model-router.ts`:
-- Default models configured via `routing.defaultMainModel` and `routing.defaultMetaModel`
-- Pattern-based routing for specific tasks
-- Fallback to defaults when patterns don't match
+- `app.mode` selects `cli` or `telegram`
+- routing uses `defaultMainModel`, `defaultMetaModel`, and optional `taskOverrides`
+- Telegram bot secrets are expected via `TELEGRAM_BOT_TOKEN`
+- tracked config keeps a placeholder token instead of a live secret
 
-## Tool System
+Config schema is defined in `src/schemas/config-schema.ts`.
 
-### Tool Definition Interface
+## Tools
 
-```typescript
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: z.ZodType<any>;
-  handler: (input: unknown) => Promise<ToolResult>;
-}
-```
+Built-in tools:
 
-### Tool Result Format
+- `read_file`
+- `write_file`
+- `list_files`
+- `http_fetch`
+- `extract_text`
 
-```typescript
-interface ToolResult {
-  toolName: string;
-  success: boolean;
-  output?: unknown;
-  error?: string;
-}
-```
+Tool registration lives in `src/tools/index.ts`.
 
-### Available Tools
+## Data Layout
 
-#### read_file
-Reads content from a file in the workspace.
+Important runtime files:
 
-**Input:**
-```json
-{
-  "path": "/path/to/file"
-}
-```
+- `data/current-config.json`
+- `data/proposed-config.json`
+- `data/long-term-memory.json`
+- `data/sessions.json`
+- `data/telegram-offset.json`
+- `data/traces/main/*`
+- `data/traces/meta/*`
 
-#### write_file
-Writes content to a file in the workspace.
+## Environment
 
-**Input:**
-```json
-{
-  "path": "/path/to/file",
-  "content": "file content"
-}
-```
+Environment variables are documented in `.env.example`.
 
-#### list_files
-Lists contents of a directory.
+Current variables:
 
-**Input:**
-```json
-{
-  "path": "/path/to/directory"
-}
-```
-
-#### http_fetch
-Fetches a URL via HTTP.
-
-**Input:**
-```json
-{
-  "url": "https://example.com"
-}
-```
-
-#### extract_text
-Extracts plain text from HTML content.
-
-**Input:**
-```json
-{
-  "html": "<html>...</html>",
-  "aggressive": false,
-  "maxChars": 20000
-}
-```
-
-## Trace System
-
-### Main Agent Trace
-
-```typescript
-interface MainAgentTrace {
-  traceId: string;
-  sessionId: string;
-  userMessage: string;
-  finalAnswer: string;
-  usedModel: string;
-  temperature: number;
-  systemPromptVersion: string;
-  planSummary: string;
-  toolCalls: ToolCallRecord[];
-  steps: AgentStepRecord[];
-  startedAt: string;
-  finishedAt: string;
-  success: boolean;
-  error?: string;
-}
-```
-
-### Meta Agent Evaluation
-
-```typescript
-interface MetaAgentEvaluation {
-  traceId: string;
-  usedModel: string;
-  score: number;           // 0.0 - 1.0
-  confidence: number;      // 0.0 - 1.0
-  issues: string[];
-  strengths: string[];
-  proposedChanges: ProposedConfigPatch;
-  summary: string;
-  startedAt: string;
-  finishedAt: string;
-}
-```
-
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show available commands |
-| `/config` | Display current configuration |
-| `/proposed` | Show proposed config changes from meta evaluation |
-| `/apply` | Apply safe proposed configuration changes |
-| `/reject` | Reject proposed config changes |
-| `/memory` | Display long-term memory context |
-| `/exit` | Exit the CLI |
-
-## Data Storage
-
-```
-data/
-├── traces/          # Execution traces
-│   ├── main/        # Main agent traces
-│   └── meta/        # Meta agent evaluations
-└── proposed-config.json  # Proposed configuration changes
-```
+- `LM_STUDIO_BASE_URL`
+- `LM_STUDIO_API_KEY`
+- `WORKSPACE_ROOT`
+- `TELEGRAM_BOT_TOKEN`
 
 ## Development
 
-### Installation
+Node version:
+
+- Node 24 is the supported runtime (`>=24 <25`)
+- repo pins this through `package.json`, `.nvmrc`, and `.node-version`
+
+Commands:
 
 ```bash
-npm install
+yarn dev
+yarn build
+yarn start
 ```
 
-### Build
+## Planning
 
-```bash
-npm run build
-```
+Planning is now managed through:
 
-### Run (Development)
+- `plan/README.md` as the status index
+- `plan/steps/` as the step source of truth
+- `plan/steps/_template.md` for future steps
 
-```bash
-npm run dev
-```
+This replaced the older duplicated step artifacts.
 
-### Run (Production)
+## Repository
 
-```bash
-npm start
-```
+GitHub remote:
 
-## Environment Variables
+- `origin`: `https://github.com/chmurson/local-ai-assistant.git`
 
-Create a `.env` file with:
+## Known Direction
 
-```
-OPENAI_API_KEY=your-api-key
-OPENAI_BASE_URL=http://localhost:1234/v1  # LM Studio endpoint
-```
+The current architecture is transport-oriented and should stay that way:
 
-## Safety & Validation
+- shared agent pipeline in core
+- thin transport adapters at the edge
+- local JSON state as the primary persistence model
 
-- All tool calls are validated against `toolAllowlist`
-- Maximum tool call iterations per run (default: 3)
-- JSON schema validation with automatic repair attempts
-- Config changes are applied only when safe (no schema violations)
-- All file operations are constrained to workspace root
-
-## Extensibility
-
-### Adding New Tools
-
-1. Create a new file in `src/tools/`
-2. Implement the `ToolDefinition` interface
-3. Register it in `src/tools/index.ts`
-4. Update `ToolName` type in `src/types/config.ts`
-
-### Custom Model Routing
-
-Add rules to the routing configuration:
-
-```typescript
-routing: {
-  modelRules: [
-    {
-      pattern: /.* TypeScript.*/i,
-      mainModel: 'typescript-specialist-1'
-    },
-    {
-      pattern: /.* Python.*/i,
-      mainModel: 'python-specialist-1'
-    }
-  ];
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| Invalid JSON output | System automatically attempts repair with lower temperature |
-| Tool call limit reached | Increase `policies.maxToolCallsPerRun` |
-| Model selection fails | Check `model-router.ts` and ensure models are available in API |
-
-### Debugging
-
-1. Check trace files in `data/traces/main/`
-2. Review meta evaluation in `data/traces/meta/`
-3. Monitor proposed config changes in `proposed-config.json`
-
-## License
-
-Private - Local Agent System v1.0.0
-```
+If new transports are added, they should reuse the same orchestration flow rather than introduce transport-specific agent logic.
