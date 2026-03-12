@@ -44,6 +44,7 @@ npm run dev
 - Zapisuje trace do `data/traces/main`.
 - Meta Agent analizuje trace i generuje bezpieczny patch konfiguracji.
 - Zapisuje ewaluacje do `data/traces/meta` i propozycje do `data/proposed-config.json`.
+- Zapisuje historie uruchomien meta do `data/meta-history.json`.
 - Safe auto-apply stosuje tylko dozwolone zmiany wg polityk.
 
 ## Komendy CLI
@@ -54,4 +55,5 @@ npm run dev
 - `/apply`
 - `/reject`
 - `/memory`
+- `/meta-history`
 - `/exit`

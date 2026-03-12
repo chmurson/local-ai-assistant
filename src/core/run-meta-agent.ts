@@ -1,13 +1,16 @@
 import type { MetaAgentResult } from '../types/agent.js';
 import type { MainAgentTrace } from '../types/trace.js';
 import { executeMetaAgent } from '../agents/meta-agent.js';
+import { pickMetaAgentModel } from './model-router.js';
 import { applySafePatch } from './auto-apply.js';
 import {
   loadCurrentConfig,
   saveCurrentConfig,
   saveProposedConfig
 } from './config-store.js';
-import { saveMetaEvaluation } from './trace-store.js';
+import { saveMetaEvaluation, saveMetaHistoryRecord } from './trace-store.js';
+import { createId } from '../utils/id.js';
+import { nowIso } from '../utils/now.js';
 
 function buildPendingPatch(
   patch: NonNullable<Parameters<typeof applySafePatch>[0]['patch']>,
@@ -37,21 +40,66 @@ function buildPendingPatch(
 
 export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
-  const evaluation = await executeMetaAgent({ trace: params.trace, config });
+  const metaRunId = createId('meta_run');
+  const fallbackStartedAt = nowIso();
+  const usedModel = pickMetaAgentModel(config);
 
-  await saveMetaEvaluation(evaluation);
+  try {
+    const evaluation = await executeMetaAgent({ trace: params.trace, config });
 
-  const patchResult = applySafePatch({ currentConfig: config, patch: evaluation.proposedChanges });
-  const pendingPatch = buildPendingPatch(evaluation.proposedChanges, patchResult.applied);
-  await saveProposedConfig(pendingPatch);
+    await saveMetaEvaluation(evaluation);
 
-  if (patchResult.applied.length > 0) {
-    await saveCurrentConfig(patchResult.updatedConfig);
+    const patchResult = applySafePatch({ currentConfig: config, patch: evaluation.proposedChanges });
+    const pendingPatch = buildPendingPatch(evaluation.proposedChanges, patchResult.applied);
+    await saveProposedConfig(pendingPatch);
+
+    if (patchResult.applied.length > 0) {
+      await saveCurrentConfig(patchResult.updatedConfig);
+    }
+
+    await saveMetaHistoryRecord({
+      metaRunId,
+      traceIds: [params.trace.traceId],
+      triggeredBy: 'per_turn',
+      status: 'completed',
+      usedModel: evaluation.usedModel,
+      startedAt: evaluation.startedAt,
+      finishedAt: evaluation.finishedAt,
+      score: evaluation.score,
+      confidence: evaluation.confidence,
+      issues: evaluation.issues,
+      summary: evaluation.summary,
+      proposedChanges: evaluation.proposedChanges,
+      applied: patchResult.applied,
+      rejected: patchResult.rejected,
+      useful: patchResult.applied.length > 0 || Object.keys(evaluation.proposedChanges).length > 0
+    });
+
+    return {
+      evaluation,
+      applied: patchResult.applied,
+      rejected: patchResult.rejected
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'unknown meta error';
+
+    await saveMetaHistoryRecord({
+      metaRunId,
+      traceIds: [params.trace.traceId],
+      triggeredBy: 'per_turn',
+      status: 'failed',
+      usedModel,
+      startedAt: fallbackStartedAt,
+      finishedAt: nowIso(),
+      issues: [],
+      summary: 'Meta run failed before producing an evaluation.',
+      proposedChanges: {},
+      applied: [],
+      rejected: [],
+      useful: false,
+      error: errorMessage
+    });
+
+    throw error;
   }
-
-  return {
-    evaluation,
-    applied: patchResult.applied,
-    rejected: patchResult.rejected
-  };
 }

@@ -17,16 +17,20 @@ export interface AgentStepRecord {
 }
 
 export interface ProposedConfigPatch {
-  mainAgent?: Partial<{
-    systemPrompt: string;
-    temperature: number;
-    enabledTools: ToolName[];
-    model: string;
-  }>;
-  routing?: Partial<{
-    defaultMainModel: string;
-    defaultMetaModel: string;
-  }>;
+  mainAgent?:
+    | {
+        systemPrompt?: string | undefined;
+        temperature?: number | undefined;
+        enabledTools?: ToolName[] | undefined;
+        model?: string | undefined;
+      }
+    | undefined;
+  routing?:
+    | {
+        defaultMainModel?: string | undefined;
+        defaultMetaModel?: string | undefined;
+      }
+    | undefined;
 }
 
 export interface MainAgentTrace {
@@ -57,4 +61,23 @@ export interface MetaAgentEvaluation {
   summary: string;
   startedAt: string;
   finishedAt: string;
+}
+
+export interface MetaHistoryRecord {
+  metaRunId: string;
+  traceIds: string[];
+  triggeredBy: 'per_turn' | 'inactivity';
+  status: 'completed' | 'failed';
+  usedModel: string;
+  startedAt: string;
+  finishedAt: string;
+  score?: number | undefined;
+  confidence?: number | undefined;
+  issues: string[];
+  summary: string;
+  proposedChanges: ProposedConfigPatch;
+  applied: string[];
+  rejected: string[];
+  useful: boolean;
+  error?: string | undefined;
 }

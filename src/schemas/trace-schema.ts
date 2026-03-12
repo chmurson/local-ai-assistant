@@ -46,3 +46,24 @@ export const metaAgentEvaluationSchema = z.object({
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime()
 });
+
+export const metaHistoryRecordSchema = z.object({
+  metaRunId: z.string().min(1),
+  traceIds: z.array(z.string().min(1)).min(1),
+  triggeredBy: z.enum(['per_turn', 'inactivity']),
+  status: z.enum(['completed', 'failed']),
+  usedModel: z.string().min(1),
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime(),
+  score: z.number().min(0).max(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  issues: z.array(z.string()),
+  summary: z.string(),
+  proposedChanges: proposedConfigPatchSchema,
+  applied: z.array(z.string()),
+  rejected: z.array(z.string()),
+  useful: z.boolean(),
+  error: z.string().optional()
+});
+
+export const metaHistoryFileSchema = z.array(metaHistoryRecordSchema);

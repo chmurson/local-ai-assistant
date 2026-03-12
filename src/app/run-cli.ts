@@ -6,6 +6,7 @@ import { createId } from '../utils/id.js';
 import { loadCurrentConfig, loadProposedConfig, saveProposedConfig } from '../core/config-store.js';
 import { loadLongTermMemory } from '../core/memory-store.js';
 import { processUserTurn } from '../core/process-user-turn.js';
+import { loadMetaHistory } from '../core/trace-store.js';
 
 function printHelp(): void {
   console.log('/help     - show commands');
@@ -14,6 +15,7 @@ function printHelp(): void {
   console.log('/apply    - apply last proposed patch via auto-apply flow (done automatically after each turn)');
   console.log('/reject   - clear proposed config patch');
   console.log('/memory   - print long-term memory');
+  console.log('/meta-history - print meta run history');
   console.log('/exit     - quit');
 }
 
@@ -71,6 +73,12 @@ export async function runCli(): Promise<void> {
       if (line === '/memory') {
         const memory = await loadLongTermMemory();
         console.log(JSON.stringify(memory, null, 2));
+        continue;
+      }
+
+      if (line === '/meta-history') {
+        const history = await loadMetaHistory();
+        console.log(JSON.stringify(history, null, 2));
         continue;
       }
 
