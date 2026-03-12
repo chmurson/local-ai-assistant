@@ -118,6 +118,30 @@ function looksLikeHtml(text: string): boolean {
   return lower.includes('<html') || lower.includes('<!doctype html') || lower.includes('<body');
 }
 
+function getReadFilePath(input: unknown): string | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const maybePath = (input as Record<string, unknown>).path;
+  return typeof maybePath === 'string' ? maybePath : null;
+}
+
+function targetsOutsideWorkspace(path: string): boolean {
+  return (
+    path.startsWith('~/') ||
+    path === '~' ||
+    path.startsWith('/') ||
+    path.startsWith('../') ||
+    path === '..' ||
+    /^[A-Za-z]:[\\/]/.test(path)
+  );
+}
+
+function buildOutsideWorkspaceReply(path: string): string {
+  return `I can't read \`${path}\` from this workspace-scoped agent. Paste that file here, or copy the relevant SSH config lines into the repo so I can inspect them.`;
+}
+
 export async function executeMainAgent(params: {
   sessionId: string;
   userMessage: string;
@@ -202,6 +226,22 @@ export async function executeMainAgent(params: {
           ? `Tool ${decision.toolName} finished successfully.`
           : `Tool ${decision.toolName} failed: ${toolResult.error ?? 'unknown error'}`
       );
+
+      const readFilePath = decision.toolName === 'read_file' ? getReadFilePath(decision.toolInput) : null;
+      if (
+        decision.toolName === 'read_file' &&
+        !toolResult.success &&
+        readFilePath &&
+        targetsOutsideWorkspace(readFilePath)
+      ) {
+        finalAnswer = buildOutsideWorkspaceReply(readFilePath);
+        pushStep(
+          steps,
+          'final',
+          `Read of ${readFilePath} is outside workspace scope; asking user to paste the file instead of retrying.`
+        );
+        break;
+      }
 
       // Auto-postprocess HTML pages so the model receives readable text from web fetches.
       if (

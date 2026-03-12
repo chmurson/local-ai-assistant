@@ -39,9 +39,7 @@ export function createTelegramDispatcher(params: {
       const result = await processUserTurn({
         sessionId,
         userMessage: message.messageText,
-        workspaceRoot,
-        channel: 'telegram',
-        remoteUserId: message.userId
+        workspaceRoot
       });
 
       await sendTelegramMessage({
@@ -51,23 +49,8 @@ export function createTelegramDispatcher(params: {
         replyToMessageId: message.messageId
       });
 
-      const metaPrefix = '[meta]';
       try {
         const meta = await result.metaPromise;
-        const metaParts = [
-          `${metaPrefix} score=${meta.evaluation.score.toFixed(2)}`,
-          `confidence=${meta.evaluation.confidence.toFixed(2)}`
-        ];
-        if (meta.evaluation.issues.length > 0) {
-          metaParts.push(`issues=${meta.evaluation.issues.join(' | ')}`);
-        }
-        await sendTelegramMessage({
-          botToken: params.config.botToken,
-          chatId: message.chatId,
-          text: metaParts.join(' '),
-          replyToMessageId: message.messageId
-        });
-
         logTelegramConversationTurn({
           chatId: message.chatId,
           userId: message.userId,
@@ -82,12 +65,6 @@ export function createTelegramDispatcher(params: {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'meta evaluation failed';
         console.error(`[telegram] meta evaluation error: ${errorMessage}`);
-        await sendTelegramMessage({
-          botToken: params.config.botToken,
-          chatId: message.chatId,
-          text: `${metaPrefix} meta evaluation unavailable (${errorMessage})`,
-          replyToMessageId: message.messageId
-        });
         logTelegramConversationTurn({
           chatId: message.chatId,
           userId: message.userId,

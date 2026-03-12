@@ -83,9 +83,7 @@ export async function runCli(): Promise<void> {
         const result = await processUserTurn({
           sessionId,
           userMessage: line,
-          workspaceRoot,
-          channel: 'cli',
-          remoteUserId: 'cli-user'
+          workspaceRoot
         });
         console.log(`\nAgent> ${result.trace.finalAnswer}`);
         const meta = await result.metaPromise;

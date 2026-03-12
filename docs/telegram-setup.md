@@ -2,6 +2,15 @@
 
 This guide shows how to run Local Agent in Telegram mode using Telegram Bot API with long polling.
 
+Telegram transport is implemented as the same agent pipeline behind a different input/output adapter:
+- inbound Telegram message
+- auth gate for one configured chat/user
+- `processUserTurn()`
+- main trace persistence
+- meta evaluation + proposed config persistence
+- assistant reply to Telegram
+- stdout mirror for observability
+
 ## 1) Create a bot
 
 1. Open Telegram and start a chat with `@BotFather`.
@@ -10,14 +19,14 @@ This guide shows how to run Local Agent in Telegram mode using Telegram Bot API 
 
 ## 2) Configure the agent
 
-Edit `data/current-config.json`:
+Set `TELEGRAM_BOT_TOKEN` in `.env`, then edit `data/current-config.json`:
 
 ```json
 {
   "app": { "mode": "telegram" },
   "telegram": {
     "enabled": true,
-    "botToken": "<telegram-bot-token>",
+    "botToken": "__SET_TELEGRAM_BOT_TOKEN_IN_ENV__",
     "allowedChatId": "123456789",
     "allowedUserId": "123456789",
     "pollingIntervalMs": 1000,
@@ -25,6 +34,12 @@ Edit `data/current-config.json`:
     "maxUpdatesPerPoll": 20
   }
 }
+```
+
+Example `.env` entry:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 ```
 
 ## 3) Find your chat ID / user ID
@@ -55,7 +70,7 @@ Expected startup logs:
 ## 5) Smoke test
 
 1. Send a message from the allowed account.
-2. Verify bot reply in Telegram.
+2. Verify exactly one assistant reply appears in Telegram.
 3. Verify stdout contains user message, assistant answer, trace ID, and meta score.
 4. Send a message from another account/chat and confirm no reply + rejection log.
 
@@ -64,3 +79,4 @@ Expected startup logs:
 - Long polling does not require public HTTPS.
 - Processed offsets are stored in `data/telegram-offset.json` to avoid duplicate processing after restart.
 - Session mapping is stored in `data/sessions.json`.
+- Meta evaluation still runs for Telegram turns, but it is logged to stdout/traces rather than sent back to the Telegram chat.

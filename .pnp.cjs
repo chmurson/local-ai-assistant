@@ -28,7 +28,7 @@ const RAW_RUNTIME_STATE =
       [null, {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@types/node", "npm:25.4.0"],\
+          ["@types/node", "npm:24.12.0"],\
           ["agent-system", "workspace:."],\
           ["dotenv", "npm:16.6.1"],\
           ["openai", "virtual:7475b14dd636f7999d9aa10588110b9b16f40a00ee0a78b41934380e422d07c976b1d3fd35ae5e52ef74b8b92028605d9f4de7ce4958c37b13c46c95273797c9#npm:4.104.0"],\
@@ -326,6 +326,14 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
+      ["npm:24.12.0", {\
+        "packageLocation": "../../../.yarn/berry/cache/@types-node-npm-24.12.0-ce6de09e0d-10c0.zip/node_modules/@types/node/",\
+        "packageDependencies": [\
+          ["@types/node", "npm:24.12.0"],\
+          ["undici-types", "npm:7.16.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:25.4.0", {\
         "packageLocation": "../../../.yarn/berry/cache/@types-node-npm-25.4.0-6cdacfe4a3-10c0.zip/node_modules/@types/node/",\
         "packageDependencies": [\
@@ -378,7 +386,7 @@ const RAW_RUNTIME_STATE =
       ["workspace:.", {\
         "packageLocation": "./",\
         "packageDependencies": [\
-          ["@types/node", "npm:25.4.0"],\
+          ["@types/node", "npm:24.12.0"],\
           ["agent-system", "workspace:."],\
           ["dotenv", "npm:16.6.1"],\
           ["openai", "virtual:7475b14dd636f7999d9aa10588110b9b16f40a00ee0a78b41934380e422d07c976b1d3fd35ae5e52ef74b8b92028605d9f4de7ce4958c37b13c46c95273797c9#npm:4.104.0"],\
@@ -1360,6 +1368,13 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "../../../.yarn/berry/cache/undici-types-npm-5.26.5-de4f7c7bb9-10c0.zip/node_modules/undici-types/",\
         "packageDependencies": [\
           ["undici-types", "npm:5.26.5"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:7.16.0", {\
+        "packageLocation": "../../../.yarn/berry/cache/undici-types-npm-7.16.0-0e23b08124-10c0.zip/node_modules/undici-types/",\
+        "packageDependencies": [\
+          ["undici-types", "npm:7.16.0"]\
         ],\
         "linkType": "HARD"\
       }],\

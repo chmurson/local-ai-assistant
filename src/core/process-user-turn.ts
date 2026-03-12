@@ -7,8 +7,6 @@ export async function processUserTurn(params: {
   sessionId: string;
   userMessage: string;
   workspaceRoot: string;
-  channel: 'cli' | 'telegram';
-  remoteUserId: string;
 }): Promise<{ trace: MainAgentTrace; metaPromise: Promise<MetaAgentResult> }> {
   const trace = await runMainAgent({
     sessionId: params.sessionId,
