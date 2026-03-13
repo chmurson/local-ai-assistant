@@ -39,6 +39,9 @@ Supported commands:
 - `/apply`
 - `/reject`
 - `/memory`
+- `/meta-status`
+- `/meta-history`
+- `/reflect`
 - `/exit`
 
 ### Telegram
@@ -62,6 +65,12 @@ Current Telegram behavior:
 - stdout mirror for observability
 - only the assistant reply is sent back to Telegram
 - meta evaluation is kept in stdout and traces, not sent to chat
+- operator slash commands currently include `/help`, `/meta_status`, `/meta_history`, and `/reflect`
+
+Command parity convention:
+
+- when adding a new operator-facing CLI command, add the Telegram equivalent as well unless there is a clear transport-specific reason not to
+- keep Telegram command names Telegram-safe, for example `/meta_status` instead of `/meta-status`
 
 ## Agents
 

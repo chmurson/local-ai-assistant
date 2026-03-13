@@ -1,7 +1,11 @@
 import { resolve } from 'node:path';
 import type { TelegramTransportConfig } from '../../types/config.js';
 import type { TelegramInboundMessage } from '../../types/telegram.js';
-import { buildMetaStatusReport, runManualMetaReflection } from '../../core/meta-operator.js';
+import {
+  buildCompactMetaHistoryReport,
+  buildMetaStatusReport,
+  runManualMetaReflection
+} from '../../core/meta-operator.js';
 import { processUserTurn } from '../../core/process-user-turn.js';
 import { getOrCreateSessionId } from '../../core/session-store.js';
 import { sendTelegramMessage } from './telegram-client.js';
@@ -16,16 +20,19 @@ async function handleTelegramCommand(params: {
   config: TelegramTransportConfig;
   message: TelegramInboundMessage;
 }): Promise<boolean> {
-  const command = params.message.messageText.trim().split(/\s+/, 1)[0]?.toLowerCase();
+  const rawCommand = params.message.messageText.trim().split(/\s+/, 1)[0]?.toLowerCase();
+  const command = rawCommand?.split('@', 1)[0];
   if (!command) {
     return false;
   }
 
   let responseText: string | null = null;
   if (command === '/help') {
-    responseText = ['/help', '/meta_status', '/reflect'].join('\n');
+    responseText = ['/help', '/meta_status', '/meta_history', '/reflect'].join('\n');
   } else if (command === '/meta-status' || command === '/meta_status') {
     responseText = await buildMetaStatusReport();
+  } else if (command === '/meta-history' || command === '/meta_history') {
+    responseText = await buildCompactMetaHistoryReport();
   } else if (command === '/reflect') {
     responseText = await runManualMetaReflection();
   }
