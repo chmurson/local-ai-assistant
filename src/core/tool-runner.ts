@@ -55,13 +55,14 @@ export async function runTool(params: {
 
   try {
     const rawOutput = await tool.run(params.input, { workspaceRoot: params.workspaceRoot });
-    const { output, outputCapped } = normalizeToolOutput(rawOutput);
+    const { output, outputCapped, outputSummary } = normalizeToolOutput(rawOutput);
     const finishedAt = nowIso();
     return {
       toolName: params.toolName,
       input: params.input,
       output,
       ...(outputCapped ? { outputCapped } : {}),
+      ...(outputSummary ? { outputSummary } : {}),
       startedAt,
       finishedAt,
       success: true

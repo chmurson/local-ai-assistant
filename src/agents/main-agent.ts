@@ -183,7 +183,14 @@ export async function executeMainAgent(params: {
         `User message: ${params.userMessage}`,
         `Iteration: ${i + 1}/${maxToolIterations + 1}`,
         toolCalls.length > 0
-          ? `Previous tool results JSON: ${JSON.stringify(toolCalls.map((call) => ({ tool: call.toolName, success: call.success, output: call.output, error: call.error })) )}`
+          ? `Previous tool results JSON: ${JSON.stringify(toolCalls.map((call) => ({
+              tool: call.toolName,
+              success: call.success,
+              output: call.output,
+              outputCapped: call.outputCapped,
+              outputSummary: call.outputSummary,
+              error: call.error
+            })))}`
           : 'No previous tool results.'
       ].join('\n');
 
@@ -290,7 +297,14 @@ export async function executeMainAgent(params: {
       const finalizePrompt = [
         `User message: ${params.userMessage}`,
         `Decision JSON: ${lastDecisionJson || '{}'}`,
-        `Tool results: ${JSON.stringify(toolCalls)}`,
+        `Tool results: ${JSON.stringify(toolCalls.map((call) => ({
+          toolName: call.toolName,
+          success: call.success,
+          output: call.output,
+          outputCapped: call.outputCapped,
+          outputSummary: call.outputSummary,
+          error: call.error
+        })))}`,
         'Provide final answer for user. Be concise and practical.'
       ].join('\n');
 
