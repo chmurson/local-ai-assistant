@@ -13,7 +13,7 @@ function printHelp(): void {
   console.log('/help     - show commands');
   console.log('/config   - print current config');
   console.log('/proposed - print proposed config patch');
-  console.log('/apply    - apply last proposed patch via auto-apply flow (done automatically after each turn)');
+  console.log('/apply    - safe auto-apply happens when deferred meta runs');
   console.log('/reject   - clear proposed config patch');
   console.log('/memory   - print long-term memory');
   console.log('/meta-history - print meta run history');
@@ -131,7 +131,7 @@ export async function runCli(): Promise<void> {
       }
 
       if (line === '/apply') {
-        console.log('Safe auto-apply runs automatically after each interaction.');
+        console.log('Safe auto-apply runs automatically when deferred meta executes.');
         continue;
       }
 
@@ -142,19 +142,11 @@ export async function runCli(): Promise<void> {
           workspaceRoot
         });
         console.log(`\nAgent> ${result.trace.finalAnswer}`);
-        const meta = await result.metaPromise;
-        console.log('\nMeta>');
-        console.log(`score=${meta.evaluation.score.toFixed(2)} confidence=${meta.evaluation.confidence.toFixed(2)}`);
-        if (meta.evaluation.issues.length > 0) {
-          console.log(`issues: ${meta.evaluation.issues.join(' | ')}`);
+        if (result.metaQueued) {
+          console.log('\nMeta> queued for deferred run after inactivity.');
+        } else {
+          console.log('\nMeta> scheduler disabled.');
         }
-        if (meta.applied.length > 0 || meta.rejected.length > 0) {
-          console.log(`applied: ${meta.applied.join(', ') || 'none'}`);
-          console.log(`rejected: ${meta.rejected.join(', ') || 'none'}`);
-        }
-        const pending = await loadProposedConfig();
-        console.log(`proposed(raw): ${JSON.stringify(meta.evaluation.proposedChanges)}`);
-        console.log(`pending: ${JSON.stringify(pending ?? {})}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'unknown runtime error';
         console.error(`Runtime error: ${message}`);

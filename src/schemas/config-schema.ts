@@ -46,6 +46,21 @@ const modelRoutingConfigSchema = z
   })
   .strict();
 
+const metaRuntimeConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    inactivityDelayMs: z.number().int().positive(),
+    minNewTracesBeforeRun: z.number().int().positive(),
+    notifyOnCompletion: z.boolean()
+  })
+  .strict()
+  .default({
+    enabled: true,
+    inactivityDelayMs: 600000,
+    minNewTracesBeforeRun: 2,
+    notifyOnCompletion: true
+  });
+
 const telegramTransportConfigSchema = z
   .object({
     enabled: z.boolean(),
@@ -70,6 +85,7 @@ export const appConfigSchema = z
     metaAgent: agentConfigSchema,
     policies: policyConfigSchema,
     routing: modelRoutingConfigSchema,
+    metaRuntime: metaRuntimeConfigSchema,
     telegram: telegramTransportConfigSchema.optional()
   })
   .strict();

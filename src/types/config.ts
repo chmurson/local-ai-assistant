@@ -24,6 +24,13 @@ export interface ModelRoutingConfig {
   taskOverrides?: Record<string, string>;
 }
 
+export interface MetaRuntimeConfig {
+  enabled: boolean;
+  inactivityDelayMs: number;
+  minNewTracesBeforeRun: number;
+  notifyOnCompletion: boolean;
+}
+
 /**
  * Telegram transport configuration
  */
@@ -56,5 +63,6 @@ export interface AppConfig {
   metaAgent: AgentConfig;
   policies: PolicyConfig;
   routing: ModelRoutingConfig;
+  metaRuntime: MetaRuntimeConfig;
   telegram?: TelegramTransportConfig;
 }

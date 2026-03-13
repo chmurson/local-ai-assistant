@@ -49,30 +49,16 @@ export function createTelegramDispatcher(params: {
         replyToMessageId: message.messageId
       });
 
-      try {
-        const meta = await result.metaPromise;
-        logTelegramConversationTurn({
-          chatId: message.chatId,
-          userId: message.userId,
-          userMessage: message.messageText,
-          assistantMessage: result.trace.finalAnswer,
-          traceId: result.trace.traceId,
-          metaSummary: {
-            score: meta.evaluation.score,
-            issues: meta.evaluation.issues
-          }
-        });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'meta evaluation failed';
-        console.error(`[telegram] meta evaluation error: ${errorMessage}`);
-        logTelegramConversationTurn({
-          chatId: message.chatId,
-          userId: message.userId,
-          userMessage: message.messageText,
-          assistantMessage: result.trace.finalAnswer,
-          traceId: result.trace.traceId,
-          metaError: errorMessage
-        });
+      logTelegramConversationTurn({
+        chatId: message.chatId,
+        userId: message.userId,
+        userMessage: message.messageText,
+        assistantMessage: result.trace.finalAnswer,
+        traceId: result.trace.traceId
+      });
+
+      if (result.metaQueued) {
+        console.log(`[telegram] meta queued for deferred run after inactivity (trace=${result.trace.traceId})`);
       }
     }
   };

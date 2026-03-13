@@ -1,5 +1,6 @@
 import { acquireAgentLock } from './core/agent-lock.js';
 import { loadCurrentConfig } from './core/config-store.js';
+import { configureMetaScheduler } from './core/meta-scheduler.js';
 import { runCli } from './app/run-cli.js';
 import { runTelegram } from './app/run-telegram.js';
 
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
 
   try {
     const config = await loadCurrentConfig();
+    configureMetaScheduler(config.metaRuntime);
 
     if (config.app.mode === 'telegram') {
       await runTelegram();

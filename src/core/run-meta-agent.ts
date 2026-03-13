@@ -101,7 +101,10 @@ function buildDiffEntries(params: {
   });
 }
 
-export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<MetaAgentResult> {
+export async function runMetaAgent(params: {
+  trace: MainAgentTrace;
+  trigger?: 'per_turn' | 'inactivity';
+}): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
   const metaRunId = createId('meta_run');
   const fallbackStartedAt = nowIso();
@@ -125,7 +128,7 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
     await saveMetaHistoryRecord({
       metaRunId,
       traceIds: [params.trace.traceId],
-      triggeredBy: 'per_turn',
+      triggeredBy: params.trigger ?? 'per_turn',
       status: 'completed',
       usedModel: evaluation.usedModel,
       startedAt: evaluation.startedAt,
@@ -165,7 +168,12 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
     return {
       evaluation,
       applied: patchResult.applied,
-      rejected: patchResult.rejected
+      rejected: patchResult.rejected,
+      useful: computeMetaUsefulness({
+        priorHistory,
+        proposedChanges: evaluation.proposedChanges,
+        applied: patchResult.applied
+      })
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'unknown meta error';
@@ -173,7 +181,7 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
     await saveMetaHistoryRecord({
       metaRunId,
       traceIds: [params.trace.traceId],
-      triggeredBy: 'per_turn',
+      triggeredBy: params.trigger ?? 'per_turn',
       status: 'failed',
       usedModel,
       startedAt: fallbackStartedAt,

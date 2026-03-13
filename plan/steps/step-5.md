@@ -22,12 +22,12 @@ The next step should answer three product questions:
 
 - [ ] Define clear success criteria for meta usefulness
 - [ ] Add a way to measure meta output quality over time
-- [ ] Stop running meta automatically on every turn
-- [ ] Trigger meta only after a configurable inactivity window
-- [ ] Cancel pending meta work when new activity arrives
+- [x] Stop running meta automatically on every turn
+- [x] Trigger meta only after a configurable inactivity window
+- [x] Cancel pending meta work when new activity arrives
 - [x] Persist a historical log of meta recommendations and applied changes
 - [x] Make that historical list easy to inspect locally
-- [ ] Document the new meta workflow and its operating rules
+- [x] Document the new meta workflow and its operating rules
 
 ## Planned Work
 
@@ -205,6 +205,31 @@ The first implementation slice now exists in the codebase:
 - CLI now exposes `/meta-history` for local inspection
 
 This keeps the current per-turn meta behavior intact while giving the system a durable audit trail before scheduler changes are introduced.
+
+## Deferred Scheduler Implemented
+
+The next slice now also exists:
+
+- meta no longer runs immediately after each accepted turn
+- accepted traces are queued globally for deferred reflection
+- a 10-minute inactivity timer controls when meta runs
+- at least 2 new traces are required before a deferred run starts
+- new activity cancels the pending inactivity window
+- if activity appears during a deferred batch, the current batch stops after the in-flight trace and requeues the remainder
+
+Current config surface:
+
+```ts
+metaRuntime: {
+  enabled: boolean;
+  inactivityDelayMs: number;
+  minNewTracesBeforeRun: number;
+  notifyOnCompletion: boolean;
+}
+```
+
+The current implementation keeps batch processing simple by draining the queued traces one-by-one once the inactivity window expires.
+When running in Telegram mode, the scheduler can also send one operator-facing completion summary after a deferred batch finishes.
 
 ## Open Issues / Follow-Ups
 

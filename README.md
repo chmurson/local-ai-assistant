@@ -42,7 +42,7 @@ npm run dev
 - Main Agent obsluguje wiadomosc usera i moze uzywac narzedzi.
 - Dostepne narzedzia: `read_file`, `write_file`, `list_files`, `http_fetch`, `extract_text` (HTML -> plain text).
 - Zapisuje trace do `data/traces/main`.
-- Meta Agent analizuje trace i generuje bezpieczny patch konfiguracji.
+- Meta Agent analizuje zebrane trace po okresie bezczynnosci i generuje bezpieczny patch konfiguracji.
 - Zapisuje ewaluacje do `data/traces/meta` i propozycje do `data/proposed-config.json`.
 - Zapisuje historie uruchomien meta do `data/meta-history.json`.
 - Safe auto-apply stosuje tylko dozwolone zmiany wg polityk.

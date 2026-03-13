@@ -8,4 +8,5 @@ export interface MetaAgentResult {
   evaluation: MetaAgentEvaluation;
   applied: string[];
   rejected: string[];
+  useful: boolean;
 }
