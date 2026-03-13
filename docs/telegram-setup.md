@@ -64,6 +64,7 @@ Expected startup logs:
 
 ```text
 [telegram] bot healthy username=@... id=...
+[telegram] bot commands registered
 [telegram] polling started (timeout=25s interval=1000ms)
 ```
 
@@ -80,3 +81,4 @@ Expected startup logs:
 - Processed offsets are stored in `data/telegram-offset.json` to avoid duplicate processing after restart.
 - Session mapping is stored in `data/sessions.json`.
 - Meta evaluation still runs for Telegram turns, but it is logged to stdout/traces rather than sent back to the Telegram chat.
+- The bot registers a small Telegram command menu on startup: `/help`, `/meta_status`, `/reflect`.

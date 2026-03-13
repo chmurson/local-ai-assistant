@@ -6,6 +6,11 @@ interface TelegramApiBaseResponse {
   result?: unknown;
 }
 
+interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
 function buildTelegramApiUrl(botToken: string, method: string): string {
   return `https://api.telegram.org/bot${botToken}/${method}`;
 }
@@ -92,6 +97,19 @@ export async function sendTelegramMessage(params: {
       chat_id: params.chatId,
       text: params.text,
       ...(params.replyToMessageId ? { reply_to_message_id: params.replyToMessageId } : {})
+    }
+  });
+}
+
+export async function setTelegramCommands(params: {
+  botToken: string;
+  commands: TelegramBotCommand[];
+}): Promise<void> {
+  await callTelegramApi({
+    botToken: params.botToken,
+    method: 'setMyCommands',
+    payload: {
+      commands: params.commands
     }
   });
 }

@@ -23,8 +23,8 @@ async function handleTelegramCommand(params: {
 
   let responseText: string | null = null;
   if (command === '/help') {
-    responseText = ['/help', '/meta-status', '/reflect'].join('\n');
-  } else if (command === '/meta-status') {
+    responseText = ['/help', '/meta_status', '/reflect'].join('\n');
+  } else if (command === '/meta-status' || command === '/meta_status') {
     responseText = await buildMetaStatusReport();
   } else if (command === '/reflect') {
     responseText = await runManualMetaReflection();
