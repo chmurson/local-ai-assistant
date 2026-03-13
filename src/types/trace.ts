@@ -76,8 +76,18 @@ export interface MetaHistoryRecord {
   issues: string[];
   summary: string;
   proposedChanges: ProposedConfigPatch;
+  proposedDiff: MetaHistoryDiffEntry[];
+  appliedDiff: MetaHistoryDiffEntry[];
+  rejectedDiff: MetaHistoryDiffEntry[];
   applied: string[];
   rejected: string[];
   useful: boolean;
   error?: string | undefined;
+}
+
+export interface MetaHistoryDiffEntry {
+  path: string;
+  before: unknown | undefined;
+  after: unknown | undefined;
+  status: 'proposed' | 'applied' | 'rejected';
 }

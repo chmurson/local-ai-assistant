@@ -36,7 +36,7 @@ export async function loadMetaHistory(): Promise<MetaHistoryRecord[]> {
 }
 
 export async function saveMetaHistoryRecord(record: MetaHistoryRecord): Promise<void> {
-  const parsed = metaHistoryRecordSchema.parse(record);
+  const parsed = metaHistoryRecordSchema.parse(record) as MetaHistoryRecord;
   const history = await loadMetaHistory();
   history.push(parsed);
   await writeJsonFile(META_HISTORY_PATH, history);

@@ -1,5 +1,5 @@
 import type { MetaAgentResult } from '../types/agent.js';
-import type { MainAgentTrace } from '../types/trace.js';
+import type { MainAgentTrace, MetaHistoryDiffEntry, ProposedConfigPatch } from '../types/trace.js';
 import { executeMetaAgent } from '../agents/meta-agent.js';
 import { pickMetaAgentModel } from './model-router.js';
 import { applySafePatch } from './auto-apply.js';
@@ -11,6 +11,15 @@ import {
 import { loadMetaHistory, saveMetaEvaluation, saveMetaHistoryRecord } from './trace-store.js';
 import { createId } from '../utils/id.js';
 import { nowIso } from '../utils/now.js';
+
+const PATCH_PATHS = [
+  'mainAgent.systemPrompt',
+  'mainAgent.temperature',
+  'mainAgent.enabledTools',
+  'mainAgent.model',
+  'routing.defaultMainModel',
+  'routing.defaultMetaModel'
+] as const;
 
 function buildPendingPatch(
   patch: NonNullable<Parameters<typeof applySafePatch>[0]['patch']>,
@@ -60,6 +69,38 @@ function computeMetaUsefulness(params: {
   return params.applied.length > 0 || hasProposal;
 }
 
+function getPathValue(source: unknown, path: string): unknown {
+  let current = source;
+  for (const key of path.split('.')) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function collectPatchPaths(patch: ProposedConfigPatch): string[] {
+  return PATCH_PATHS.filter((path) => getPathValue(patch, path) !== undefined);
+}
+
+function buildDiffEntries(params: {
+  beforeSource: unknown;
+  afterSource: unknown;
+  paths: string[];
+  status: MetaHistoryDiffEntry['status'];
+}): MetaHistoryDiffEntry[] {
+  return params.paths.map((path) => {
+    const entry: MetaHistoryDiffEntry = {
+      path,
+      before: getPathValue(params.beforeSource, path),
+      after: getPathValue(params.afterSource, path),
+      status: params.status
+    };
+    return entry;
+  });
+}
+
 export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
   const metaRunId = createId('meta_run');
@@ -73,6 +114,7 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
     await saveMetaEvaluation(evaluation);
 
     const patchResult = applySafePatch({ currentConfig: config, patch: evaluation.proposedChanges });
+    const proposedPaths = collectPatchPaths(evaluation.proposedChanges);
     const pendingPatch = buildPendingPatch(evaluation.proposedChanges, patchResult.applied);
     await saveProposedConfig(pendingPatch);
 
@@ -93,6 +135,24 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
       issues: evaluation.issues,
       summary: evaluation.summary,
       proposedChanges: evaluation.proposedChanges,
+      proposedDiff: buildDiffEntries({
+        beforeSource: config,
+        afterSource: evaluation.proposedChanges,
+        paths: proposedPaths,
+        status: 'proposed'
+      }),
+      appliedDiff: buildDiffEntries({
+        beforeSource: config,
+        afterSource: patchResult.updatedConfig,
+        paths: patchResult.applied,
+        status: 'applied'
+      }),
+      rejectedDiff: buildDiffEntries({
+        beforeSource: config,
+        afterSource: evaluation.proposedChanges,
+        paths: patchResult.rejected,
+        status: 'rejected'
+      }),
       applied: patchResult.applied,
       rejected: patchResult.rejected,
       useful: computeMetaUsefulness({
@@ -121,6 +181,9 @@ export async function runMetaAgent(params: { trace: MainAgentTrace }): Promise<M
       issues: [],
       summary: 'Meta run failed before producing an evaluation.',
       proposedChanges: {},
+      proposedDiff: [],
+      appliedDiff: [],
+      rejectedDiff: [],
       applied: [],
       rejected: [],
       useful: false,

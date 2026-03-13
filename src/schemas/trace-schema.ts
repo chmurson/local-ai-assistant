@@ -60,6 +60,36 @@ export const metaHistoryRecordSchema = z.object({
   issues: z.array(z.string()),
   summary: z.string(),
   proposedChanges: proposedConfigPatchSchema,
+  proposedDiff: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        before: z.unknown(),
+        after: z.unknown(),
+        status: z.enum(['proposed', 'applied', 'rejected'])
+      })
+    )
+    .default([]),
+  appliedDiff: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        before: z.unknown(),
+        after: z.unknown(),
+        status: z.enum(['proposed', 'applied', 'rejected'])
+      })
+    )
+    .default([]),
+  rejectedDiff: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        before: z.unknown(),
+        after: z.unknown(),
+        status: z.enum(['proposed', 'applied', 'rejected'])
+      })
+    )
+    .default([]),
   applied: z.array(z.string()),
   rejected: z.array(z.string()),
   useful: z.boolean(),
