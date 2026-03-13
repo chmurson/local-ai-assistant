@@ -1,5 +1,21 @@
 import type { ToolName } from './config.js';
 
+export type MetaRunClassification =
+  | 'unknown'
+  | 'useful_applied'
+  | 'useful_operator_signal'
+  | 'healthy_no_change'
+  | 'not_useful_repeated'
+  | 'not_useful_noop'
+  | 'not_useful_invalid'
+  | 'not_useful_failed';
+
+export interface MetaOperatorReview {
+  classification: Exclude<MetaRunClassification, 'unknown'>;
+  note?: string;
+  reviewedAt: string;
+}
+
 export interface ToolCallRecord {
   toolName: ToolName;
   input: unknown;
@@ -73,6 +89,7 @@ export interface MetaHistoryRecord {
   traceIds: string[];
   triggeredBy: 'per_turn' | 'inactivity' | 'manual';
   status: 'completed' | 'failed';
+  classification: MetaRunClassification;
   usedModel: string;
   startedAt: string;
   finishedAt: string;
@@ -87,6 +104,7 @@ export interface MetaHistoryRecord {
   applied: string[];
   rejected: string[];
   useful: boolean;
+  operatorReview?: MetaOperatorReview;
   error?: string | undefined;
 }
 

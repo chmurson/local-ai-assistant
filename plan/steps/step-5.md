@@ -1,8 +1,8 @@
 # Step 5
 
-Status: in_progress  
+Status: done  
 Type: capability  
-Updated: 2026-03-12
+Updated: 2026-03-13
 
 ## Goal
 
@@ -20,8 +20,8 @@ The next step should answer three product questions:
 
 ## Acceptance
 
-- [ ] Define clear success criteria for meta usefulness
-- [ ] Add a way to measure meta output quality over time
+- [x] Define clear success criteria for meta usefulness
+- [x] Add a way to measure meta output quality over time
 - [x] Stop running meta automatically on every turn
 - [x] Trigger meta only after a configurable inactivity window
 - [x] Cancel pending meta work when new activity arrives
@@ -219,6 +219,8 @@ The next slice now also exists:
 - operators can inspect scheduler state with `/meta-status`
 - operators can trigger an immediate queued batch with `/reflect`
 - the same two commands are available through Telegram slash commands for the allowed chat
+ - new meta runs are automatically classified into useful / healthy / failure-style buckets
+ - `/meta-status` now reports aggregate and recent classification metrics over time
 
 Current config surface:
 
@@ -237,11 +239,9 @@ On startup, the scheduler also adopts a small recent window of unprocessed main 
 
 ## Open Issues / Follow-Ups
 
-- Decide whether meta should run on a fixed timer, a debounce timer, or both.
-- Decide whether inactivity should be global or per session.
-- Decide whether one meta run should analyze only the latest trace or a batch window.
-- Decide whether meta history should be append-only.
-- Decide whether auto-apply should remain enabled once meta becomes asynchronous.
+- Decide whether to add operator review/override commands for meta classifications.
+- Refine how `useful_operator_signal` is detected once more history exists.
+- Decide whether one meta run should eventually analyze a richer batch window instead of one trace at a time.
 
 ## Relevant Files
 

@@ -1,5 +1,10 @@
 import type { MetaAgentResult } from '../types/agent.js';
-import type { MainAgentTrace, MetaHistoryDiffEntry, ProposedConfigPatch } from '../types/trace.js';
+import type {
+  MainAgentTrace,
+  MetaHistoryDiffEntry,
+  MetaRunClassification,
+  ProposedConfigPatch
+} from '../types/trace.js';
 import { executeMetaAgent } from '../agents/meta-agent.js';
 import { pickMetaAgentModel } from './model-router.js';
 import { applySafePatch } from './auto-apply.js';
@@ -48,13 +53,11 @@ function buildPendingPatch(
   return pending;
 }
 
-function computeMetaUsefulness(params: {
+function hasRepeatedProposal(params: {
   priorHistory: Awaited<ReturnType<typeof loadMetaHistory>>;
   proposedChanges: NonNullable<Parameters<typeof applySafePatch>[0]['patch']>;
-  applied: string[];
 }): boolean {
-  const hasProposal = Object.keys(params.proposedChanges).length > 0;
-  if (!hasProposal && params.applied.length === 0) {
+  if (Object.keys(params.proposedChanges).length === 0) {
     return false;
   }
 
@@ -64,10 +67,70 @@ function computeMetaUsefulness(params: {
     .some((record) => record.status === 'completed' && JSON.stringify(record.proposedChanges) === proposalKey);
 
   if (repeatedProposal) {
-    return false;
+    return true;
   }
 
-  return params.applied.length > 0 || hasProposal;
+  return false;
+}
+
+function classifyMetaRun(params: {
+  status: 'completed' | 'failed';
+  priorHistory: Awaited<ReturnType<typeof loadMetaHistory>>;
+  summary?: string;
+  issues?: string[];
+  originalProposedChanges?: ProposedConfigPatch;
+  effectiveProposedChanges?: ProposedConfigPatch;
+  applied: string[];
+  rejected: string[];
+}): MetaRunClassification {
+  if (params.status === 'failed') {
+    return 'not_useful_failed';
+  }
+
+  const originalProposedChanges = params.originalProposedChanges ?? {};
+  const effectiveProposedChanges = params.effectiveProposedChanges ?? {};
+  const originalHadProposal = Object.keys(originalProposedChanges).length > 0;
+  const effectiveHadProposal = Object.keys(effectiveProposedChanges).length > 0;
+  const summary = params.summary ?? '';
+  const issues = params.issues ?? [];
+
+  if (
+    summary === 'Meta output format was invalid, so no config changes were proposed.' ||
+    issues.includes('Meta-agent returned invalid JSON output; fallback evaluation was used.')
+  ) {
+    return 'not_useful_invalid';
+  }
+
+  if (params.applied.length > 0) {
+    return 'useful_applied';
+  }
+
+  if (originalHadProposal && !effectiveHadProposal && params.rejected.length === 0) {
+    return 'not_useful_noop';
+  }
+
+  if (
+    hasRepeatedProposal({
+      priorHistory: params.priorHistory,
+      proposedChanges: effectiveProposedChanges
+    })
+  ) {
+    return 'not_useful_repeated';
+  }
+
+  if (!originalHadProposal && issues.length === 0) {
+    return 'healthy_no_change';
+  }
+
+  if (!originalHadProposal && summary.toLowerCase().includes('no issues were identified')) {
+    return 'healthy_no_change';
+  }
+
+  return 'useful_operator_signal';
+}
+
+function isUsefulClassification(classification: MetaRunClassification): boolean {
+  return classification === 'useful_applied' || classification === 'useful_operator_signal';
 }
 
 function getPathValue(source: unknown, path: string): unknown {
@@ -154,6 +217,7 @@ export async function runMetaAgent(params: {
 
   try {
     const evaluation = await executeMetaAgent({ trace: params.trace, config, modelRegistry });
+    const originalProposedChanges = evaluation.proposedChanges;
     const effectiveProposedChanges = pruneNoOpPatch(config, evaluation.proposedChanges);
 
     if (JSON.stringify(effectiveProposedChanges) !== JSON.stringify(evaluation.proposedChanges)) {
@@ -166,6 +230,16 @@ export async function runMetaAgent(params: {
       currentConfig: config,
       patch: evaluation.proposedChanges,
       availableModelIds
+    });
+    const classification = classifyMetaRun({
+      status: 'completed',
+      priorHistory,
+      summary: evaluation.summary,
+      issues: evaluation.issues,
+      originalProposedChanges,
+      effectiveProposedChanges: evaluation.proposedChanges,
+      applied: patchResult.applied,
+      rejected: patchResult.rejected
     });
     const proposedPaths = collectPatchPaths(evaluation.proposedChanges);
     const pendingPatch = buildPendingPatch(evaluation.proposedChanges, patchResult.applied);
@@ -180,6 +254,7 @@ export async function runMetaAgent(params: {
       traceIds: [params.trace.traceId],
       triggeredBy: params.trigger ?? 'per_turn',
       status: 'completed',
+      classification,
       usedModel: evaluation.usedModel,
       startedAt: evaluation.startedAt,
       finishedAt: evaluation.finishedAt,
@@ -208,22 +283,14 @@ export async function runMetaAgent(params: {
       }),
       applied: patchResult.applied,
       rejected: patchResult.rejected,
-      useful: computeMetaUsefulness({
-        priorHistory,
-        proposedChanges: evaluation.proposedChanges,
-        applied: patchResult.applied
-      })
+      useful: isUsefulClassification(classification)
     });
 
     return {
       evaluation,
       applied: patchResult.applied,
       rejected: patchResult.rejected,
-      useful: computeMetaUsefulness({
-        priorHistory,
-        proposedChanges: evaluation.proposedChanges,
-        applied: patchResult.applied
-      })
+      useful: isUsefulClassification(classification)
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'unknown meta error';
@@ -233,6 +300,7 @@ export async function runMetaAgent(params: {
       traceIds: [params.trace.traceId],
       triggeredBy: params.trigger ?? 'per_turn',
       status: 'failed',
+      classification: 'not_useful_failed',
       usedModel,
       startedAt: fallbackStartedAt,
       finishedAt: nowIso(),

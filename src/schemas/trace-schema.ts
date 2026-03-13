@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { proposedConfigPatchSchema, toolNameSchema } from './config-schema.js';
 
+const metaRunClassificationSchema = z.enum([
+  'unknown',
+  'useful_applied',
+  'useful_operator_signal',
+  'healthy_no_change',
+  'not_useful_repeated',
+  'not_useful_noop',
+  'not_useful_invalid',
+  'not_useful_failed'
+]);
+
 const toolCallRecordSchema = z.object({
   toolName: toolNameSchema,
   input: z.unknown(),
@@ -57,6 +68,7 @@ export const metaHistoryRecordSchema = z.object({
   traceIds: z.array(z.string().min(1)).min(1),
   triggeredBy: z.enum(['per_turn', 'inactivity', 'manual']),
   status: z.enum(['completed', 'failed']),
+  classification: metaRunClassificationSchema.default('unknown'),
   usedModel: z.string().min(1),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime(),
@@ -98,6 +110,13 @@ export const metaHistoryRecordSchema = z.object({
   applied: z.array(z.string()),
   rejected: z.array(z.string()),
   useful: z.boolean(),
+  operatorReview: z
+    .object({
+      classification: metaRunClassificationSchema.exclude(['unknown']),
+      note: z.string().optional(),
+      reviewedAt: z.string().datetime()
+    })
+    .optional(),
   error: z.string().optional()
 });
 

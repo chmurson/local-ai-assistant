@@ -51,7 +51,9 @@ function printMetaHistory(history: Awaited<ReturnType<typeof loadMetaHistory>>):
   }
 
   for (const record of history) {
-    console.log(`\n[${record.metaRunId}] status=${record.status} trigger=${record.triggeredBy} useful=${record.useful}`);
+    console.log(
+      `\n[${record.metaRunId}] status=${record.status} trigger=${record.triggeredBy} classification=${record.classification} useful=${record.useful}`
+    );
     console.log(`traceIds: ${record.traceIds.join(', ')}`);
     console.log(`model: ${record.usedModel}`);
     if (record.score !== undefined && record.confidence !== undefined) {
@@ -66,6 +68,14 @@ function printMetaHistory(history: Awaited<ReturnType<typeof loadMetaHistory>>):
     printDiffSection('rejected', record.rejectedDiff);
     if (record.error) {
       console.log(`error: ${record.error}`);
+    }
+    if (record.operatorReview) {
+      console.log(
+        `operatorReview: ${record.operatorReview.classification} at ${record.operatorReview.reviewedAt}`
+      );
+      if (record.operatorReview.note) {
+        console.log(`operatorNote: ${record.operatorReview.note}`);
+      }
     }
   }
 }
