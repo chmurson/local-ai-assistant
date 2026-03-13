@@ -2,6 +2,7 @@ import { loadCurrentConfig } from './config-store.js';
 import { sendTelegramMessage } from '../transport/telegram/telegram-client.js';
 
 export interface MetaBatchSummary {
+  trigger: 'inactivity' | 'manual';
   processedTraces: string[];
   completedRuns: number;
   failedRuns: number;
@@ -13,7 +14,7 @@ export interface MetaBatchSummary {
 
 function buildMetaSummaryMessage(summary: MetaBatchSummary): string {
   const lines = [
-    '[meta] deferred batch completed',
+    `[meta] ${summary.trigger} batch completed`,
     `traces=${summary.processedTraces.length} completed=${summary.completedRuns} failed=${summary.failedRuns} useful=${summary.usefulRuns}`,
     `interrupted=${summary.interrupted ? 'yes' : 'no'}`
   ];

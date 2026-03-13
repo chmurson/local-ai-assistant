@@ -56,5 +56,7 @@ npm run dev
 - `/apply`
 - `/reject`
 - `/memory`
+- `/meta-status`
 - `/meta-history`
+- `/reflect`
 - `/exit`

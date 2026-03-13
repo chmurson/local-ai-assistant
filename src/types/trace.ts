@@ -66,7 +66,7 @@ export interface MetaAgentEvaluation {
 export interface MetaHistoryRecord {
   metaRunId: string;
   traceIds: string[];
-  triggeredBy: 'per_turn' | 'inactivity';
+  triggeredBy: 'per_turn' | 'inactivity' | 'manual';
   status: 'completed' | 'failed';
   usedModel: string;
   startedAt: string;

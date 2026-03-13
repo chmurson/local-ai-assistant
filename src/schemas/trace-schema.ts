@@ -50,7 +50,7 @@ export const metaAgentEvaluationSchema = z.object({
 export const metaHistoryRecordSchema = z.object({
   metaRunId: z.string().min(1),
   traceIds: z.array(z.string().min(1)).min(1),
-  triggeredBy: z.enum(['per_turn', 'inactivity']),
+  triggeredBy: z.enum(['per_turn', 'inactivity', 'manual']),
   status: z.enum(['completed', 'failed']),
   usedModel: z.string().min(1),
   startedAt: z.string().datetime(),

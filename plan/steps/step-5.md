@@ -216,6 +216,9 @@ The next slice now also exists:
 - at least 2 new traces are required before a deferred run starts
 - new activity cancels the pending inactivity window
 - if activity appears during a deferred batch, the current batch stops after the in-flight trace and requeues the remainder
+- operators can inspect scheduler state with `/meta-status`
+- operators can trigger an immediate queued batch with `/reflect`
+- the same two commands are available through Telegram slash commands for the allowed chat
 
 Current config surface:
 

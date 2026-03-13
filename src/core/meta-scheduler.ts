@@ -11,6 +11,7 @@ interface MetaSchedulerState {
   config: MetaRuntimeConfig | null;
   pendingTraces: MainAgentTrace[];
   inactivityTimer: ReturnType<typeof setTimeout> | null;
+  nextScheduledAtMs: number | null;
   generation: number;
   running: boolean;
 }
@@ -19,6 +20,7 @@ const state: MetaSchedulerState = {
   config: null,
   pendingTraces: [],
   inactivityTimer: null,
+  nextScheduledAtMs: null,
   generation: 0,
   running: false
 };
@@ -29,6 +31,7 @@ function clearInactivityTimer(): void {
   }
   clearTimeout(state.inactivityTimer);
   state.inactivityTimer = null;
+  state.nextScheduledAtMs = null;
 }
 
 function enqueueTrace(trace: MainAgentTrace, options?: {
@@ -74,30 +77,84 @@ function scheduleInactivityTimer(): void {
 
   clearInactivityTimer();
   const scheduledGeneration = state.generation;
+  state.nextScheduledAtMs = Date.now() + state.config.inactivityDelayMs;
   state.inactivityTimer = setTimeout(() => {
-    void flushMetaBatch(scheduledGeneration);
+    void flushMetaBatch({
+      trigger: 'inactivity',
+      scheduledGeneration,
+      enforceMinimumCount: true
+    });
   }, state.config.inactivityDelayMs);
 }
 
-async function flushMetaBatch(scheduledGeneration: number): Promise<void> {
+async function flushMetaBatch(params: {
+  trigger: 'inactivity' | 'manual';
+  scheduledGeneration?: number;
+  enforceMinimumCount: boolean;
+}): Promise<{
+  processedTraces: string[];
+  completedRuns: number;
+  failedRuns: number;
+  usefulRuns: number;
+  appliedPaths: string[];
+  rejectedPaths: string[];
+  interrupted: boolean;
+}> {
   state.inactivityTimer = null;
+  state.nextScheduledAtMs = null;
 
   if (!state.config?.enabled || state.running) {
-    return;
+    return {
+      processedTraces: [],
+      completedRuns: 0,
+      failedRuns: 0,
+      usefulRuns: 0,
+      appliedPaths: [],
+      rejectedPaths: [],
+      interrupted: false
+    };
   }
-  if (scheduledGeneration !== state.generation) {
-    return;
+  if (params.scheduledGeneration !== undefined && params.scheduledGeneration !== state.generation) {
+    return {
+      processedTraces: [],
+      completedRuns: 0,
+      failedRuns: 0,
+      usefulRuns: 0,
+      appliedPaths: [],
+      rejectedPaths: [],
+      interrupted: false
+    };
   }
-  if (state.pendingTraces.length < state.config.minNewTracesBeforeRun) {
-    return;
+  if (params.enforceMinimumCount && state.pendingTraces.length < state.config.minNewTracesBeforeRun) {
+    return {
+      processedTraces: [],
+      completedRuns: 0,
+      failedRuns: 0,
+      usefulRuns: 0,
+      appliedPaths: [],
+      rejectedPaths: [],
+      interrupted: false
+    };
+  }
+  if (state.pendingTraces.length === 0) {
+    return {
+      processedTraces: [],
+      completedRuns: 0,
+      failedRuns: 0,
+      usefulRuns: 0,
+      appliedPaths: [],
+      rejectedPaths: [],
+      interrupted: false
+    };
   }
 
   state.running = true;
   const runGeneration = state.generation;
   const batch = state.pendingTraces.splice(0);
 
-  console.log(`[meta] inactivity window reached; processing ${batch.length} queued trace(s)`);
+  console.log(`[meta] ${params.trigger} batch starting; processing ${batch.length} queued trace(s)`);
   const summary = {
+    trigger: params.trigger,
     processedTraces: [] as string[],
     completedRuns: 0,
     failedRuns: 0,
@@ -119,7 +176,7 @@ async function flushMetaBatch(scheduledGeneration: number): Promise<void> {
         break;
       }
       try {
-        const result = await runMetaAgent({ trace, trigger: 'inactivity' });
+        const result = await runMetaAgent({ trace, trigger: params.trigger });
         summary.processedTraces.push(trace.traceId);
         summary.completedRuns += 1;
         if (result.useful) {
@@ -143,6 +200,7 @@ async function flushMetaBatch(scheduledGeneration: number): Promise<void> {
     if (summary.processedTraces.length > 0) {
       try {
         await notifyMetaBatchCompleted({
+          trigger: summary.trigger,
           processedTraces: summary.processedTraces,
           completedRuns: summary.completedRuns,
           failedRuns: summary.failedRuns,
@@ -160,6 +218,16 @@ async function flushMetaBatch(scheduledGeneration: number): Promise<void> {
       scheduleInactivityTimer();
     }
   }
+
+  return {
+    processedTraces: summary.processedTraces,
+    completedRuns: summary.completedRuns,
+    failedRuns: summary.failedRuns,
+    usefulRuns: summary.usefulRuns,
+    appliedPaths: [...summary.appliedPaths],
+    rejectedPaths: [...summary.rejectedPaths],
+    interrupted: summary.interrupted
+  };
 }
 
 export function configureMetaScheduler(config: MetaRuntimeConfig): void {
@@ -167,6 +235,7 @@ export function configureMetaScheduler(config: MetaRuntimeConfig): void {
   if (!config.enabled) {
     clearInactivityTimer();
     state.pendingTraces = [];
+    state.nextScheduledAtMs = null;
     return;
   }
 }
@@ -200,4 +269,67 @@ export async function adoptRecentTracesForMetaOnStartup(): Promise<number> {
   }
 
   return adopted;
+}
+
+export function getMetaSchedulerStatus(): {
+  enabled: boolean;
+  running: boolean;
+  pendingCount: number;
+  pendingTraceIds: string[];
+  minNewTracesBeforeRun: number;
+  inactivityDelayMs: number;
+  nextScheduledAt: string | null;
+} {
+  return {
+    enabled: state.config?.enabled ?? false,
+    running: state.running,
+    pendingCount: state.pendingTraces.length,
+    pendingTraceIds: state.pendingTraces.map((trace) => trace.traceId),
+    minNewTracesBeforeRun: state.config?.minNewTracesBeforeRun ?? 0,
+    inactivityDelayMs: state.config?.inactivityDelayMs ?? 0,
+    nextScheduledAt: state.nextScheduledAtMs ? new Date(state.nextScheduledAtMs).toISOString() : null
+  };
+}
+
+export async function runMetaReflectionNow(): Promise<{
+  started: boolean;
+  message: string;
+  processedTraces: string[];
+}> {
+  if (!state.config?.enabled) {
+    return {
+      started: false,
+      message: 'scheduler disabled',
+      processedTraces: []
+    };
+  }
+  if (state.running) {
+    return {
+      started: false,
+      message: 'meta is already running',
+      processedTraces: []
+    };
+  }
+  if (state.pendingTraces.length === 0) {
+    return {
+      started: false,
+      message: 'no queued traces to reflect',
+      processedTraces: []
+    };
+  }
+
+  clearInactivityTimer();
+  const summary = await flushMetaBatch({
+    trigger: 'manual',
+    enforceMinimumCount: false
+  });
+
+  return {
+    started: summary.processedTraces.length > 0,
+    message:
+      summary.processedTraces.length > 0
+        ? `manual reflection completed for ${summary.processedTraces.length} trace(s)`
+        : 'manual reflection did not process any traces',
+    processedTraces: summary.processedTraces
+  };
 }

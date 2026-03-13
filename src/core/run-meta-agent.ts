@@ -104,7 +104,7 @@ function buildDiffEntries(params: {
 
 export async function runMetaAgent(params: {
   trace: MainAgentTrace;
-  trigger?: 'per_turn' | 'inactivity';
+  trigger?: 'per_turn' | 'inactivity' | 'manual';
 }): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
   const modelRegistry = await loadModelRegistry(config);

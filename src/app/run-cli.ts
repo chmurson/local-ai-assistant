@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { createId } from '../utils/id.js';
 import { loadCurrentConfig, loadProposedConfig, saveProposedConfig } from '../core/config-store.js';
 import { loadLongTermMemory } from '../core/memory-store.js';
+import { buildMetaStatusReport, runManualMetaReflection } from '../core/meta-operator.js';
 import { processUserTurn } from '../core/process-user-turn.js';
 import { loadMetaHistory } from '../core/trace-store.js';
 import type { MetaHistoryDiffEntry } from '../types/trace.js';
@@ -16,7 +17,9 @@ function printHelp(): void {
   console.log('/apply    - safe auto-apply happens when deferred meta runs');
   console.log('/reject   - clear proposed config patch');
   console.log('/memory   - print long-term memory');
+  console.log('/meta-status - print deferred meta scheduler state');
   console.log('/meta-history - print meta run history');
+  console.log('/reflect  - run queued meta reflection now');
   console.log('/exit     - quit');
 }
 
@@ -127,6 +130,16 @@ export async function runCli(): Promise<void> {
       if (line === '/meta-history') {
         const history = await loadMetaHistory();
         printMetaHistory(history);
+        continue;
+      }
+
+      if (line === '/meta-status') {
+        console.log(await buildMetaStatusReport());
+        continue;
+      }
+
+      if (line === '/reflect') {
+        console.log(await runManualMetaReflection());
         continue;
       }
 
