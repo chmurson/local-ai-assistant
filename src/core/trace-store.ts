@@ -56,3 +56,25 @@ export async function loadRecentMainTraces(limit: number): Promise<MainAgentTrac
 
   return traces;
 }
+
+export async function loadRecentUnprocessedMainTraces(params: {
+  limit: number;
+  lookbackMs: number;
+}): Promise<MainAgentTrace[]> {
+  const [recentTraces, metaHistory] = await Promise.all([loadRecentMainTraces(params.limit), loadMetaHistory()]);
+  const processedTraceIds = new Set(metaHistory.flatMap((record) => record.traceIds));
+  const cutoff = Date.now() - params.lookbackMs;
+
+  return recentTraces.filter((trace) => {
+    if (processedTraceIds.has(trace.traceId)) {
+      return false;
+    }
+
+    const finishedAtMs = Date.parse(trace.finishedAt);
+    if (!Number.isFinite(finishedAtMs)) {
+      return false;
+    }
+
+    return finishedAtMs >= cutoff;
+  });
+}

@@ -2,6 +2,10 @@ import type { MainAgentTrace } from '../types/trace.js';
 import type { MetaRuntimeConfig } from '../types/config.js';
 import { runMetaAgent } from './run-meta-agent.js';
 import { notifyMetaBatchCompleted } from './meta-notifier.js';
+import { loadRecentUnprocessedMainTraces } from './trace-store.js';
+
+const STARTUP_ADOPTION_LIMIT = 20;
+const STARTUP_ADOPTION_LOOKBACK_MS = 60 * 60 * 1000;
 
 interface MetaSchedulerState {
   config: MetaRuntimeConfig | null;
@@ -25,6 +29,42 @@ function clearInactivityTimer(): void {
   }
   clearTimeout(state.inactivityTimer);
   state.inactivityTimer = null;
+}
+
+function enqueueTrace(trace: MainAgentTrace, options?: {
+  incrementGeneration?: boolean;
+  source?: 'activity' | 'startup';
+}): boolean {
+  if (!state.config?.enabled) {
+    return false;
+  }
+
+  const source = options?.source ?? 'activity';
+  const incrementGeneration = options?.incrementGeneration ?? true;
+  if (incrementGeneration) {
+    state.generation += 1;
+    clearInactivityTimer();
+  }
+
+  if (state.pendingTraces.some((candidate) => candidate.traceId === trace.traceId)) {
+    return false;
+  }
+
+  state.pendingTraces.push(trace);
+
+  if (state.running) {
+    console.log('[meta] queued new activity while deferred meta is running');
+  } else if (source === 'startup') {
+    console.log(
+      `[meta] adopted startup trace ${trace.traceId} (${state.pendingTraces.length}/${state.config.minNewTracesBeforeRun} before deferred run)`
+    );
+  } else {
+    console.log(
+      `[meta] queued trace ${trace.traceId} (${state.pendingTraces.length}/${state.config.minNewTracesBeforeRun} before deferred run)`
+    );
+  }
+
+  return true;
 }
 
 function scheduleInactivityTimer(): void {
@@ -132,25 +172,32 @@ export function configureMetaScheduler(config: MetaRuntimeConfig): void {
 }
 
 export function queueTraceForMeta(trace: MainAgentTrace): boolean {
-  if (!state.config?.enabled) {
-    return false;
-  }
-
-  state.generation += 1;
-  clearInactivityTimer();
-
-  if (!state.pendingTraces.some((candidate) => candidate.traceId === trace.traceId)) {
-    state.pendingTraces.push(trace);
-  }
-
-  if (state.running) {
-    console.log('[meta] queued new activity while deferred meta is running');
-  } else {
-    console.log(
-      `[meta] queued trace ${trace.traceId} (${state.pendingTraces.length}/${state.config.minNewTracesBeforeRun} before deferred run)`
-    );
-  }
-
+  const added = enqueueTrace(trace, { incrementGeneration: true, source: 'activity' });
   scheduleInactivityTimer();
-  return true;
+  return added;
+}
+
+export async function adoptRecentTracesForMetaOnStartup(): Promise<number> {
+  if (!state.config?.enabled) {
+    return 0;
+  }
+
+  const traces = await loadRecentUnprocessedMainTraces({
+    limit: STARTUP_ADOPTION_LIMIT,
+    lookbackMs: STARTUP_ADOPTION_LOOKBACK_MS
+  });
+
+  let adopted = 0;
+  for (const trace of [...traces].reverse()) {
+    if (enqueueTrace(trace, { incrementGeneration: false, source: 'startup' })) {
+      adopted += 1;
+    }
+  }
+
+  if (adopted > 0) {
+    console.log(`[meta] adopted ${adopted} recent unprocessed trace(s) from disk on startup`);
+    scheduleInactivityTimer();
+  }
+
+  return adopted;
 }

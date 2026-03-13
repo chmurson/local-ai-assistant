@@ -230,6 +230,7 @@ metaRuntime: {
 
 The current implementation keeps batch processing simple by draining the queued traces one-by-one once the inactivity window expires.
 When running in Telegram mode, the scheduler can also send one operator-facing completion summary after a deferred batch finishes.
+On startup, the scheduler also adopts a small recent window of unprocessed main traces from disk so a restart does not silently orphan the latest backlog.
 
 ## Open Issues / Follow-Ups
 
