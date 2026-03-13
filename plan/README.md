@@ -13,7 +13,8 @@ This directory now has one source of truth:
 | 2 | capability | done | Telegram transport with long polling, auth gate, offsets, and stdout mirror |
 | 3 | hardening | done | Telegram secret handling cleanup, user-facing reply cleanup, and docs refresh |
 | 4 | process | done | Rework task and plan management so repo progress is explicit and auditable |
-| 5 | capability | planned | Rework meta execution so it is measurable, inactivity-driven, and historically traceable |
+| 5 | capability | in_progress | Rework meta execution so it is measurable, inactivity-driven, and historically traceable |
+| 6 | capability | planned | Introduce a scalable retrieval/tool architecture with source-aware fetch behavior and MCP-oriented boundaries |
 
 ## Conventions For New Steps
 
@@ -52,3 +53,10 @@ Step 5 is reserved for improving the meta process itself, including:
 - running meta after inactivity instead of after every turn
 - cancelling deferred meta work when new user activity arrives
 - keeping a historical log of meta-generated changes and outcomes
+
+Step 6 is reserved for improving retrieval and tool architecture, including:
+
+- deciding what should remain native versus move behind MCP
+- introducing source-aware retrieval profiles instead of one-off site hacks
+- tightening output budgets and summarization for tool-heavy workflows
+- improving the terminal/operator experience for web-heavy tasks

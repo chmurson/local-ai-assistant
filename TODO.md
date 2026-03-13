@@ -21,7 +21,6 @@
 
 - Prevent large tool outputs from causing meta context-length failures.
 - Keep improving the meta usefulness signal so repeated low-impact prompt churn is not treated as progress.
-- Add a manual trace-reflection trigger such as `/reflect` so meta can also be invoked explicitly on demand.
 
 ## Telegram operator UX
 
