@@ -39,3 +39,13 @@ export async function generateText(params: {
     model: response.model ?? params.model
   };
 }
+
+export async function listAvailableModels(): Promise<string[]> {
+  const client = getClient();
+  const response = await client.models.list();
+  const ids = response.data
+    .map((model) => model.id)
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+
+  return [...new Set(ids)].sort((left, right) => left.localeCompare(right));
+}

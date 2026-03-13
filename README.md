@@ -45,6 +45,7 @@ npm run dev
 - Meta Agent analizuje zebrane trace po okresie bezczynnosci i generuje bezpieczny patch konfiguracji.
 - Zapisuje ewaluacje do `data/traces/meta` i propozycje do `data/proposed-config.json`.
 - Zapisuje historie uruchomien meta do `data/meta-history.json`.
+- Moze wzbogacac dostepne modele o lokalne opisy z `config/model-descriptions.json`, bez ingerowania w live discovery przez `/models`.
 - Safe auto-apply stosuje tylko dozwolone zmiany wg polityk.
 
 ## Komendy CLI

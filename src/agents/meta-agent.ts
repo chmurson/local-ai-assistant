@@ -1,5 +1,6 @@
 import { buildMetaSystemPrompt } from './prompts/meta-system.js';
 import { generateText } from '../core/llm-client.js';
+import { formatModelRegistryForPrompt, type ModelRegistry } from '../core/model-registry.js';
 import { pickMetaAgentModel } from '../core/model-router.js';
 import { proposedConfigPatchSchema } from '../schemas/config-schema.js';
 import type { AppConfig } from '../types/config.js';
@@ -95,6 +96,7 @@ function normalizeProposedChanges(input: unknown): ProposedConfigPatch {
 export async function executeMetaAgent(params: {
   trace: MainAgentTrace;
   config: AppConfig;
+  modelRegistry: ModelRegistry;
 }): Promise<MetaAgentEvaluation> {
   const startedAt = nowIso();
   const usedModel = pickMetaAgentModel(params.config);
@@ -109,7 +111,10 @@ export async function executeMetaAgent(params: {
     '- mainAgent.model',
     '- routing.defaultMainModel',
     '- routing.defaultMetaModel',
+    'Only propose model changes using exact ids from the available model list below.',
     `Allowed tools allowlist: ${params.config.policies.toolAllowlist.join(', ')}`,
+    `Available models (${params.modelRegistry.discovered ? 'discovered from /models' : 'fallback from current config'}):`,
+    formatModelRegistryForPrompt(params.modelRegistry),
     `Current config JSON: ${JSON.stringify(params.config)}`,
     `Trace JSON: ${JSON.stringify(params.trace)}`
   ].join('\n');

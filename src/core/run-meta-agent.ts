@@ -3,6 +3,7 @@ import type { MainAgentTrace, MetaHistoryDiffEntry, ProposedConfigPatch } from '
 import { executeMetaAgent } from '../agents/meta-agent.js';
 import { pickMetaAgentModel } from './model-router.js';
 import { applySafePatch } from './auto-apply.js';
+import { buildAvailableModelIdSet, loadModelRegistry } from './model-registry.js';
 import {
   loadCurrentConfig,
   saveCurrentConfig,
@@ -106,17 +107,23 @@ export async function runMetaAgent(params: {
   trigger?: 'per_turn' | 'inactivity';
 }): Promise<MetaAgentResult> {
   const config = await loadCurrentConfig();
+  const modelRegistry = await loadModelRegistry(config);
+  const availableModelIds = buildAvailableModelIdSet(modelRegistry);
   const metaRunId = createId('meta_run');
   const fallbackStartedAt = nowIso();
   const usedModel = pickMetaAgentModel(config);
   const priorHistory = await loadMetaHistory();
 
   try {
-    const evaluation = await executeMetaAgent({ trace: params.trace, config });
+    const evaluation = await executeMetaAgent({ trace: params.trace, config, modelRegistry });
 
     await saveMetaEvaluation(evaluation);
 
-    const patchResult = applySafePatch({ currentConfig: config, patch: evaluation.proposedChanges });
+    const patchResult = applySafePatch({
+      currentConfig: config,
+      patch: evaluation.proposedChanges,
+      availableModelIds
+    });
     const proposedPaths = collectPatchPaths(evaluation.proposedChanges);
     const pendingPatch = buildPendingPatch(evaluation.proposedChanges, patchResult.applied);
     await saveProposedConfig(pendingPatch);

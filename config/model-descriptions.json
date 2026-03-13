@@ -1,0 +1,72 @@
+{
+  "models": {
+    "nvidia/nemotron-3-nano": {
+      "description": "Efficient hybrid MoE reasoning model aimed at agentic workloads, long-context tasks, and high-throughput local inference.",
+      "traits": [
+        "agentic reasoning",
+        "1M context",
+        "high throughput"
+      ],
+      "sources": [
+        "https://research.nvidia.com/labs/nemotron/Nemotron-3/"
+      ]
+    },
+    "qwen/qwen3-coder-next": {
+      "description": "Coding-focused reasoning model for agentic software tasks, repository editing, and long-context tool use.",
+      "traits": [
+        "coding",
+        "agentic tool use",
+        "long context"
+      ],
+      "sources": [
+        "https://github.com/QwenLM/Qwen3-Coder"
+      ]
+    },
+    "qwen/qwen3-coder-30b": {
+      "description": "Larger Qwen3-Coder variant for code generation, repository work, and tool-using coding agents when you want more headroom than the Next local variant.",
+      "traits": [
+        "coding",
+        "agentic tool use",
+        "larger capacity"
+      ],
+      "sources": [
+        "https://github.com/QwenLM/Qwen3-Coder"
+      ]
+    },
+    "liquid/lfm2-24b-a2b": {
+      "description": "General-purpose hybrid instruct model optimized for efficient on-device deployment, function calling, and privacy-sensitive local workflows.",
+      "traits": [
+        "efficient MoE",
+        "function calling",
+        "on-device deployment"
+      ],
+      "sources": [
+        "https://huggingface.co/LiquidAI/LFM2-24B-A2B"
+      ]
+    },
+    "openai/gpt-oss-20b": {
+      "description": "Open-weight local reasoning model suited to structured outputs, tool use, and general assistant work.",
+      "traits": [
+        "reasoning",
+        "structured output",
+        "local deployment"
+      ],
+      "sources": [
+        "https://openai.com/index/introducing-gpt-oss",
+        "https://huggingface.co/openai/gpt-oss-20b"
+      ]
+    },
+    "text-embedding-nomic-embed-text-v1.5": {
+      "description": "Open text embedding model for retrieval, clustering, and classification, with Matryoshka dimensionality reduction and long-context support.",
+      "traits": [
+        "embeddings",
+        "retrieval",
+        "matryoshka dimensions"
+      ],
+      "sources": [
+        "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+        "https://www.nomic.ai/embed"
+      ]
+    }
+  }
+}

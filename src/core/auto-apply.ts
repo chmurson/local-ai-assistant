@@ -4,6 +4,7 @@ import type { ProposedConfigPatch } from '../types/trace.js';
 export function applySafePatch(params: {
   currentConfig: AppConfig;
   patch: ProposedConfigPatch;
+  availableModelIds?: Set<string>;
 }): {
   updatedConfig: AppConfig;
   applied: string[];
@@ -13,6 +14,8 @@ export function applySafePatch(params: {
   const applied: string[] = [];
   const rejected: string[] = [];
   const { policies } = params.currentConfig;
+  const isKnownModel = (model: string): boolean =>
+    model.trim().length > 0 && (!params.availableModelIds || params.availableModelIds.has(model));
 
   if (params.patch.mainAgent?.systemPrompt !== undefined) {
     if (policies.allowAutoApplyPromptChanges && params.patch.mainAgent.systemPrompt.trim().length > 0) {
@@ -46,7 +49,7 @@ export function applySafePatch(params: {
 
   if (params.patch.mainAgent?.model !== undefined) {
     const model = params.patch.mainAgent.model;
-    if (policies.allowAutoApplyModelRoutingChanges && model.trim().length > 0) {
+    if (policies.allowAutoApplyModelRoutingChanges && isKnownModel(model)) {
       updatedConfig.mainAgent.model = model;
       updatedConfig.routing.defaultMainModel = model;
       applied.push('mainAgent.model');
@@ -57,7 +60,7 @@ export function applySafePatch(params: {
 
   if (params.patch.routing?.defaultMainModel !== undefined) {
     const model = params.patch.routing.defaultMainModel;
-    if (policies.allowAutoApplyModelRoutingChanges && model.trim().length > 0) {
+    if (policies.allowAutoApplyModelRoutingChanges && isKnownModel(model)) {
       updatedConfig.routing.defaultMainModel = model;
       applied.push('routing.defaultMainModel');
     } else {
@@ -67,7 +70,7 @@ export function applySafePatch(params: {
 
   if (params.patch.routing?.defaultMetaModel !== undefined) {
     const model = params.patch.routing.defaultMetaModel;
-    if (policies.allowAutoApplyModelRoutingChanges && model.trim().length > 0) {
+    if (policies.allowAutoApplyModelRoutingChanges && isKnownModel(model)) {
       updatedConfig.routing.defaultMetaModel = model;
       updatedConfig.metaAgent.model = model;
       applied.push('routing.defaultMetaModel');
