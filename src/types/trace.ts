@@ -3,6 +3,9 @@ import type { ToolName } from './config.js';
 export interface ToolCallRecord {
   toolName: ToolName;
   input: unknown;
+  originalInput?: unknown;
+  inputNormalized?: boolean;
+  inputNormalizationNotes?: string[];
   output: unknown;
   outputCapped?: boolean;
   outputSummary?: string;

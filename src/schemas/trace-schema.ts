@@ -4,6 +4,9 @@ import { proposedConfigPatchSchema, toolNameSchema } from './config-schema.js';
 const toolCallRecordSchema = z.object({
   toolName: toolNameSchema,
   input: z.unknown(),
+  originalInput: z.unknown().optional(),
+  inputNormalized: z.boolean().optional(),
+  inputNormalizationNotes: z.array(z.string()).optional(),
   output: z.unknown(),
   outputCapped: z.boolean().optional(),
   outputSummary: z.string().optional(),

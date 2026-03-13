@@ -1,12 +1,14 @@
 import type { ToolName } from '../types/config.js';
 import type { ToolCallRecord } from '../types/trace.js';
 import { toolRegistry } from '../tools/index.js';
+import { normalizeToolInput } from './tool-input-normalizer.js';
 import { normalizeToolOutput } from './tool-output-normalizer.js';
 import { nowIso } from '../utils/now.js';
 
 export async function runTool(params: {
   toolName: ToolName;
   input: unknown;
+  userMessage?: string;
   enabledTools: ToolName[];
   policyAllowlist: ToolName[];
   workspaceRoot: string;
@@ -53,13 +55,22 @@ export async function runTool(params: {
     };
   }
 
+  const normalizedInput = normalizeToolInput({
+    toolName: params.toolName,
+    input: params.input,
+    ...(params.userMessage ? { userMessage: params.userMessage } : {})
+  });
+
   try {
-    const rawOutput = await tool.run(params.input, { workspaceRoot: params.workspaceRoot });
+    const rawOutput = await tool.run(normalizedInput.input, { workspaceRoot: params.workspaceRoot });
     const { output, outputCapped, outputSummary } = normalizeToolOutput(rawOutput);
     const finishedAt = nowIso();
     return {
       toolName: params.toolName,
-      input: params.input,
+      input: normalizedInput.input,
+      ...(normalizedInput.normalized ? { originalInput: params.input } : {}),
+      ...(normalizedInput.normalized ? { inputNormalized: true } : {}),
+      ...(normalizedInput.notes.length > 0 ? { inputNormalizationNotes: normalizedInput.notes } : {}),
       output,
       ...(outputCapped ? { outputCapped } : {}),
       ...(outputSummary ? { outputSummary } : {}),
@@ -71,7 +82,10 @@ export async function runTool(params: {
     const finishedAt = nowIso();
     return {
       toolName: params.toolName,
-      input: params.input,
+      input: normalizedInput.input,
+      ...(normalizedInput.normalized ? { originalInput: params.input } : {}),
+      ...(normalizedInput.normalized ? { inputNormalized: true } : {}),
+      ...(normalizedInput.notes.length > 0 ? { inputNormalizationNotes: normalizedInput.notes } : {}),
       output: null,
       startedAt,
       finishedAt,

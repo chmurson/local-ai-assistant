@@ -186,6 +186,10 @@ export async function executeMainAgent(params: {
           ? `Previous tool results JSON: ${JSON.stringify(toolCalls.map((call) => ({
               tool: call.toolName,
               success: call.success,
+              input: call.input,
+              originalInput: call.originalInput,
+              inputNormalized: call.inputNormalized,
+              inputNormalizationNotes: call.inputNormalizationNotes,
               output: call.output,
               outputCapped: call.outputCapped,
               outputSummary: call.outputSummary,
@@ -234,6 +238,7 @@ export async function executeMainAgent(params: {
       const toolResult = await runTool({
         toolName: decision.toolName,
         input: decision.toolInput ?? {},
+        userMessage: params.userMessage,
         enabledTools: params.config.mainAgent.enabledTools,
         policyAllowlist: params.config.policies.toolAllowlist,
         workspaceRoot: params.workspaceRoot
@@ -243,9 +248,14 @@ export async function executeMainAgent(params: {
         steps,
         'tool_result',
         toolResult.success
-          ? `Tool ${decision.toolName} finished successfully${toolResult.outputCapped ? ' with capped output' : ''}.`
+          ? `Tool ${decision.toolName} finished successfully${toolResult.inputNormalized ? ' after input normalization' : ''}${toolResult.outputCapped ? ' with capped output' : ''}.`
           : `Tool ${decision.toolName} failed: ${toolResult.error ?? 'unknown error'}`
       );
+      if (toolResult.inputNormalizationNotes && toolResult.inputNormalizationNotes.length > 0) {
+        for (const note of toolResult.inputNormalizationNotes) {
+          pushStep(steps, 'reasoning', note);
+        }
+      }
 
       const readFilePath = decision.toolName === 'read_file' ? getReadFilePath(decision.toolInput) : null;
       if (
@@ -277,6 +287,7 @@ export async function executeMainAgent(params: {
           const extractResult = await runTool({
             toolName: 'extract_text',
             input: { html: body, aggressive: true, maxChars: 20000 },
+            userMessage: params.userMessage,
             enabledTools: params.config.mainAgent.enabledTools,
             policyAllowlist: params.config.policies.toolAllowlist,
             workspaceRoot: params.workspaceRoot
@@ -300,6 +311,10 @@ export async function executeMainAgent(params: {
         `Tool results: ${JSON.stringify(toolCalls.map((call) => ({
           toolName: call.toolName,
           success: call.success,
+          input: call.input,
+          originalInput: call.originalInput,
+          inputNormalized: call.inputNormalized,
+          inputNormalizationNotes: call.inputNormalizationNotes,
           output: call.output,
           outputCapped: call.outputCapped,
           outputSummary: call.outputSummary,
