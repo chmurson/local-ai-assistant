@@ -81,6 +81,44 @@ function getPathValue(source: unknown, path: string): unknown {
   return current;
 }
 
+function setPathValue(target: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path.split('.');
+  let current: Record<string, unknown> = target;
+
+  for (const key of parts.slice(0, -1)) {
+    const next = current[key];
+    if (!next || typeof next !== 'object' || Array.isArray(next)) {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  }
+
+  const lastKey = parts[parts.length - 1];
+  if (lastKey) {
+    current[lastKey] = value;
+  }
+}
+
+function pruneNoOpPatch(currentConfig: ProposedConfigPatch | unknown, patch: ProposedConfigPatch): ProposedConfigPatch {
+  const nextPatch: Record<string, unknown> = {};
+
+  for (const path of PATCH_PATHS) {
+    const proposedValue = getPathValue(patch, path);
+    if (proposedValue === undefined) {
+      continue;
+    }
+
+    const currentValue = getPathValue(currentConfig, path);
+    if (JSON.stringify(currentValue) === JSON.stringify(proposedValue)) {
+      continue;
+    }
+
+    setPathValue(nextPatch, path, proposedValue);
+  }
+
+  return nextPatch as ProposedConfigPatch;
+}
+
 function collectPatchPaths(patch: ProposedConfigPatch): string[] {
   return PATCH_PATHS.filter((path) => getPathValue(patch, path) !== undefined);
 }
@@ -116,6 +154,11 @@ export async function runMetaAgent(params: {
 
   try {
     const evaluation = await executeMetaAgent({ trace: params.trace, config, modelRegistry });
+    const effectiveProposedChanges = pruneNoOpPatch(config, evaluation.proposedChanges);
+
+    if (JSON.stringify(effectiveProposedChanges) !== JSON.stringify(evaluation.proposedChanges)) {
+      evaluation.proposedChanges = effectiveProposedChanges;
+    }
 
     await saveMetaEvaluation(evaluation);
 
