@@ -5,6 +5,7 @@ const toolCallRecordSchema = z.object({
   toolName: toolNameSchema,
   input: z.unknown(),
   output: z.unknown(),
+  outputCapped: z.boolean().optional(),
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime(),
   success: z.boolean(),

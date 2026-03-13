@@ -4,6 +4,7 @@ export interface ToolCallRecord {
   toolName: ToolName;
   input: unknown;
   output: unknown;
+  outputCapped?: boolean;
   startedAt: string;
   finishedAt: string;
   success: boolean;

@@ -1,6 +1,7 @@
 import type { ToolName } from '../types/config.js';
 import type { ToolCallRecord } from '../types/trace.js';
 import { toolRegistry } from '../tools/index.js';
+import { normalizeToolOutput } from './tool-output-normalizer.js';
 import { nowIso } from '../utils/now.js';
 
 export async function runTool(params: {
@@ -53,12 +54,14 @@ export async function runTool(params: {
   }
 
   try {
-    const output = await tool.run(params.input, { workspaceRoot: params.workspaceRoot });
+    const rawOutput = await tool.run(params.input, { workspaceRoot: params.workspaceRoot });
+    const { output, outputCapped } = normalizeToolOutput(rawOutput);
     const finishedAt = nowIso();
     return {
       toolName: params.toolName,
       input: params.input,
       output,
+      ...(outputCapped ? { outputCapped } : {}),
       startedAt,
       finishedAt,
       success: true

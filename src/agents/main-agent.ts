@@ -236,7 +236,7 @@ export async function executeMainAgent(params: {
         steps,
         'tool_result',
         toolResult.success
-          ? `Tool ${decision.toolName} finished successfully.`
+          ? `Tool ${decision.toolName} finished successfully${toolResult.outputCapped ? ' with capped output' : ''}.`
           : `Tool ${decision.toolName} failed: ${toolResult.error ?? 'unknown error'}`
       );
 
@@ -279,7 +279,7 @@ export async function executeMainAgent(params: {
             steps,
             'tool_result',
             extractResult.success
-              ? 'Auto tool extract_text finished successfully.'
+              ? `Auto tool extract_text finished successfully${extractResult.outputCapped ? ' with capped output' : ''}.`
               : `Auto tool extract_text failed: ${extractResult.error ?? 'unknown error'}`
           );
         }
