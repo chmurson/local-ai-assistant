@@ -12,7 +12,8 @@ This directory now has one source of truth:
 | 1 | capability | done | CLI-first local agent with main/meta flow, tools, traces, config, and memory |
 | 2 | capability | done | Telegram transport with long polling, auth gate, offsets, and stdout mirror |
 | 3 | hardening | done | Telegram secret handling cleanup, user-facing reply cleanup, and docs refresh |
-| 4 | process | planned | Rework task and plan management so repo progress is explicit and auditable |
+| 4 | process | done | Rework task and plan management so repo progress is explicit and auditable |
+| 5 | capability | planned | Rework meta execution so it is measurable, inactivity-driven, and historically traceable |
 
 ## Conventions For New Steps
 
@@ -44,3 +45,10 @@ Step 4 is reserved for improving repo task management itself, including:
 - consistent step file structure
 - clearer distinction between planned work and completed work
 - tracked open follow-ups per step
+
+Step 5 is reserved for improving the meta process itself, including:
+
+- measuring whether meta recommendations are useful
+- running meta after inactivity instead of after every turn
+- cancelling deferred meta work when new user activity arrives
+- keeping a historical log of meta-generated changes and outcomes
