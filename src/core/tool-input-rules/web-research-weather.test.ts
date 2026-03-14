@@ -30,3 +30,19 @@ test('weather normalizer does not rewrite already matching meteo query', () => {
 
   assert.equal(result.changed, false);
 });
+
+test('weather normalizer preserves location from existing query instead of falling back to Warszawa', () => {
+  const result = normalizeWeatherWebResearch({
+    userMessage: 'Prognoza pogody',
+    input: {
+      query: 'Wrocław prognoza pogody'
+    }
+  });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.input, {
+    query: 'site:meteo.pl Wrocław prognoza pogody',
+    depth: 'summary',
+    limit: 3
+  });
+});
