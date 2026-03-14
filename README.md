@@ -37,10 +37,15 @@ npm run dev
 4. Agent bedzie odbierac wiadomosci przez long polling i logowac rozmowe do stdout.
 5. Szczegoly konfiguracji i smoke test sa w `docs/telegram-setup.md`.
 
+## Zewnetrzne MCP Tools
+
+Pierwszy przygotowany setup dla lokalnego, zewnetrznego MCP jest opisany w `docs/web-search-mcp-setup.md`.
+Instalacja trafia do nietrackowanego katalogu `.external-tools/`, a bootstrap pozostaje w repo.
+
 ## Co robi system
 
 - Main Agent obsluguje wiadomosc usera i moze uzywac narzedzi.
-- Dostepne narzedzia: `read_file`, `write_file`, `list_files`, `http_fetch`, `extract_text` (HTML -> plain text).
+- Dostepne narzedzia: `read_file`, `write_file`, `list_files`, `http_fetch`, `extract_text` (HTML -> plain text), `web_research` (zewnetrzny local MCP-backed web search / page research).
 - Zapisuje trace do `data/traces/main`.
 - Meta Agent analizuje zebrane trace po okresie bezczynnosci i generuje bezpieczny patch konfiguracji.
 - Zapisuje ewaluacje do `data/traces/meta` i propozycje do `data/proposed-config.json`.

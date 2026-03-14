@@ -1,5 +1,7 @@
 import type { ToolName } from '../types/config.js';
 import { normalizeHackerNewsHttpFetch } from './tool-input-rules/http-fetch-hacker-news.js';
+import { normalizeHackerNewsWebResearch } from './tool-input-rules/web-research-hacker-news.js';
+import { normalizeWeatherWebResearch } from './tool-input-rules/web-research-weather.js';
 
 interface ToolInputNormalizerResult {
   input: unknown;
@@ -17,6 +19,18 @@ const toolInputNormalizerRegistry: Partial<Record<ToolName, ToolInputNormalizer[
   http_fetch: [
     (params) =>
       normalizeHackerNewsHttpFetch({
+        input: params.input,
+        ...(params.userMessage ? { userMessage: params.userMessage } : {})
+      })
+  ],
+  web_research: [
+    (params) =>
+      normalizeWeatherWebResearch({
+        input: params.input,
+        ...(params.userMessage ? { userMessage: params.userMessage } : {})
+      }),
+    (params) =>
+      normalizeHackerNewsWebResearch({
         input: params.input,
         ...(params.userMessage ? { userMessage: params.userMessage } : {})
       })

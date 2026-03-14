@@ -1,4 +1,10 @@
-export type ToolName = 'read_file' | 'write_file' | 'list_files' | 'http_fetch' | 'extract_text';
+export type ToolName =
+  | 'read_file'
+  | 'write_file'
+  | 'list_files'
+  | 'http_fetch'
+  | 'extract_text'
+  | 'web_research';
 
 export interface AgentConfig {
   model: string;

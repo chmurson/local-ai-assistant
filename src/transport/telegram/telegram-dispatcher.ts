@@ -6,10 +6,12 @@ import {
   buildMetaStatusReport,
   runManualMetaReflection
 } from '../../core/meta-operator.js';
+import { formatUserFacingAssistantReply } from '../../core/assistant-response-format.js';
 import { processUserTurn } from '../../core/process-user-turn.js';
 import { getOrCreateSessionId } from '../../core/session-store.js';
 import { sendTelegramMessage } from './telegram-client.js';
 import { isAllowedTelegramSource } from './telegram-auth.js';
+import { createTelegramProgressMessage } from './telegram-progress.js';
 import { logTelegramConversationTurn } from './telegram-stdout.js';
 
 export interface TelegramDispatcher {
@@ -66,8 +68,8 @@ export function createTelegramDispatcher(params: {
           ...(params.config.allowedUserId ? { allowedUserId: params.config.allowedUserId } : {})
         })
       ) {
-        console.warn(`[telegram] rejected source chat=${message.chatId} user=${message.userId}`);
-        return;
+      console.warn(`[telegram] rejected source chat=${message.chatId} user=${message.userId}`);
+      return;
       }
 
       console.log(`[telegram] accepted source chat=${message.chatId} user=${message.userId}`);
@@ -78,25 +80,40 @@ export function createTelegramDispatcher(params: {
 
       const sessionKey = `telegram:chat:${message.chatId}:user:${message.userId}`;
       const sessionId = await getOrCreateSessionId(sessionKey);
-
-      const result = await processUserTurn({
-        sessionId,
-        userMessage: message.messageText,
-        workspaceRoot
-      });
-
-      await sendTelegramMessage({
+      const progressMessage = createTelegramProgressMessage({
         botToken: params.config.botToken,
         chatId: message.chatId,
-        text: result.trace.finalAnswer,
         replyToMessageId: message.messageId
       });
+
+      await progressMessage.start();
+      const result = await (async () => {
+        try {
+          const turnResult = await processUserTurn({
+            sessionId,
+            userMessage: message.messageText,
+            workspaceRoot,
+            onProgress: (event) => progressMessage.update(event)
+          });
+
+          await sendTelegramMessage({
+            botToken: params.config.botToken,
+            chatId: message.chatId,
+            text: formatUserFacingAssistantReply(turnResult.trace),
+            replyToMessageId: message.messageId
+          });
+
+          return turnResult;
+        } finally {
+          await progressMessage.stop();
+        }
+      })();
 
       logTelegramConversationTurn({
         chatId: message.chatId,
         userId: message.userId,
         userMessage: message.messageText,
-        assistantMessage: result.trace.finalAnswer,
+        assistantMessage: formatUserFacingAssistantReply(result.trace),
         traceId: result.trace.traceId
       });
 

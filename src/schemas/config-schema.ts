@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const toolNames = ['read_file', 'write_file', 'list_files', 'http_fetch', 'extract_text'] as const;
+const toolNames = ['read_file', 'write_file', 'list_files', 'http_fetch', 'extract_text', 'web_research'] as const;
 
 export const toolNameSchema = z.enum(toolNames);
 

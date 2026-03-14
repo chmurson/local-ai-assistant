@@ -89,14 +89,37 @@ export async function sendTelegramMessage(params: {
   chatId: string;
   text: string;
   replyToMessageId?: number;
-}): Promise<void> {
-  await callTelegramApi({
+}): Promise<number | undefined> {
+  const response = await callTelegramApi({
     botToken: params.botToken,
     method: 'sendMessage',
     payload: {
       chat_id: params.chatId,
       text: params.text,
       ...(params.replyToMessageId ? { reply_to_message_id: params.replyToMessageId } : {})
+    }
+  });
+
+  const result = response.result as
+    | {
+        message_id?: number;
+      }
+    | undefined;
+
+  return typeof result?.message_id === 'number' ? result.message_id : undefined;
+}
+
+export async function sendTelegramChatAction(params: {
+  botToken: string;
+  chatId: string;
+  action?: 'typing';
+}): Promise<void> {
+  await callTelegramApi({
+    botToken: params.botToken,
+    method: 'sendChatAction',
+    payload: {
+      chat_id: params.chatId,
+      action: params.action ?? 'typing'
     }
   });
 }
@@ -110,6 +133,38 @@ export async function setTelegramCommands(params: {
     method: 'setMyCommands',
     payload: {
       commands: params.commands
+    }
+  });
+}
+
+export async function editTelegramMessage(params: {
+  botToken: string;
+  chatId: string;
+  messageId: number;
+  text: string;
+}): Promise<void> {
+  await callTelegramApi({
+    botToken: params.botToken,
+    method: 'editMessageText',
+    payload: {
+      chat_id: params.chatId,
+      message_id: params.messageId,
+      text: params.text
+    }
+  });
+}
+
+export async function deleteTelegramMessage(params: {
+  botToken: string;
+  chatId: string;
+  messageId: number;
+}): Promise<void> {
+  await callTelegramApi({
+    botToken: params.botToken,
+    method: 'deleteMessage',
+    payload: {
+      chat_id: params.chatId,
+      message_id: params.messageId
     }
   });
 }

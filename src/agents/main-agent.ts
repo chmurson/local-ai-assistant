@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { buildMainSystemPrompt } from './prompts/main-system.js';
+import { detectInternalDecisionLeak } from './final-answer-guard.js';
 import { generateText } from '../core/llm-client.js';
 import { pickMainAgentModel } from '../core/model-router.js';
 import { runTool } from '../core/tool-runner.js';
@@ -13,7 +14,9 @@ const decisionSchema = z
   .object({
     planSummary: z.string(),
     shouldUseTool: z.boolean(),
-    toolName: z.enum(['read_file', 'write_file', 'list_files', 'http_fetch', 'extract_text']).optional(),
+    toolName: z
+      .enum(['read_file', 'write_file', 'list_files', 'http_fetch', 'extract_text', 'web_research'])
+      .optional(),
     toolInput: z.unknown().optional(),
     finalAnswer: z.string().optional()
   })
@@ -154,6 +157,7 @@ export async function executeMainAgent(params: {
   config: AppConfig;
   memory: LongTermMemory;
   workspaceRoot: string;
+  onProgress?: (event: { step: number; phase: 'model' | 'tool'; detail: string }) => Promise<void> | void;
 }): Promise<MainAgentTrace> {
   const traceId = createId('trace');
   const startedAt = nowIso();
@@ -173,9 +177,17 @@ export async function executeMainAgent(params: {
   let lastDecisionJson = '';
   let success = true;
   let error: string | undefined;
+  let progressStep = 0;
 
   try {
     for (let i = 0; i <= maxToolIterations; i += 1) {
+      progressStep += 1;
+      await params.onProgress?.({
+        step: progressStep,
+        phase: 'model',
+        detail: i === 0 ? 'analiza pytania' : 'kolejny krok planowania'
+      });
+
       const decisionPrompt = [
         'Return JSON only with schema:',
         '{"planSummary":string,"shouldUseTool":boolean,"toolName"?:string,"toolInput"?:object,"finalAnswer"?:string}',
@@ -185,6 +197,9 @@ export async function executeMainAgent(params: {
         toolCalls.length > 0
           ? `Previous tool results JSON: ${JSON.stringify(toolCalls.map((call) => ({
               tool: call.toolName,
+              originalTool: call.originalToolName,
+              toolNormalized: call.toolNormalized,
+              toolNormalizationNotes: call.toolNormalizationNotes,
               success: call.success,
               input: call.input,
               originalInput: call.originalInput,
@@ -241,16 +256,27 @@ export async function executeMainAgent(params: {
         userMessage: params.userMessage,
         enabledTools: params.config.mainAgent.enabledTools,
         policyAllowlist: params.config.policies.toolAllowlist,
-        workspaceRoot: params.workspaceRoot
+        workspaceRoot: params.workspaceRoot,
+        onToolStart: (toolName) =>
+          params.onProgress?.({
+            step: ++progressStep,
+            phase: 'tool',
+            detail: toolName
+          })
       });
       toolCalls.push(toolResult);
       pushStep(
         steps,
         'tool_result',
         toolResult.success
-          ? `Tool ${decision.toolName} finished successfully${toolResult.inputNormalized ? ' after input normalization' : ''}${toolResult.outputCapped ? ' with capped output' : ''}.`
-          : `Tool ${decision.toolName} failed: ${toolResult.error ?? 'unknown error'}`
+          ? `Tool ${toolResult.toolName} finished successfully${toolResult.toolNormalized ? ` after tool normalization from ${decision.toolName}` : ''}${toolResult.inputNormalized ? ' after input normalization' : ''}${toolResult.outputCapped ? ' with capped output' : ''}.`
+          : `Tool ${toolResult.toolName} failed: ${toolResult.error ?? 'unknown error'}`
       );
+      if (toolResult.toolNormalizationNotes && toolResult.toolNormalizationNotes.length > 0) {
+        for (const note of toolResult.toolNormalizationNotes) {
+          pushStep(steps, 'reasoning', note);
+        }
+      }
       if (toolResult.inputNormalizationNotes && toolResult.inputNormalizationNotes.length > 0) {
         for (const note of toolResult.inputNormalizationNotes) {
           pushStep(steps, 'reasoning', note);
@@ -290,7 +316,13 @@ export async function executeMainAgent(params: {
             userMessage: params.userMessage,
             enabledTools: params.config.mainAgent.enabledTools,
             policyAllowlist: params.config.policies.toolAllowlist,
-            workspaceRoot: params.workspaceRoot
+            workspaceRoot: params.workspaceRoot,
+            onToolStart: (toolName) =>
+              params.onProgress?.({
+                step: ++progressStep,
+                phase: 'tool',
+                detail: toolName
+              })
           });
           toolCalls.push(extractResult);
           pushStep(
@@ -305,11 +337,21 @@ export async function executeMainAgent(params: {
     }
 
     if (!finalAnswer) {
+      progressStep += 1;
+      await params.onProgress?.({
+        step: progressStep,
+        phase: 'model',
+        detail: 'finalizacja odpowiedzi'
+      });
+
       const finalizePrompt = [
         `User message: ${params.userMessage}`,
         `Decision JSON: ${lastDecisionJson || '{}'}`,
         `Tool results: ${JSON.stringify(toolCalls.map((call) => ({
           toolName: call.toolName,
+          originalToolName: call.originalToolName,
+          toolNormalized: call.toolNormalized,
+          toolNormalizationNotes: call.toolNormalizationNotes,
           success: call.success,
           input: call.input,
           originalInput: call.originalInput,
@@ -353,11 +395,20 @@ export async function executeMainAgent(params: {
     finalAnswer = planSummary || 'I could not produce a final answer.';
   }
 
+  const leakedDecision = detectInternalDecisionLeak(finalAnswer);
+  if (success && leakedDecision.leaked) {
+    success = false;
+    error = 'Final answer leaked internal decision JSON.';
+    pushStep(steps, 'final', error);
+    finalAnswer = leakedDecision.recoveredFinalAnswer ?? planSummary ?? 'I could not produce a final answer.';
+  }
+
   const trace: MainAgentTrace = {
     traceId,
     sessionId: params.sessionId,
     userMessage: params.userMessage,
     finalAnswer,
+    processingStepCount: progressStep,
     usedModel: model,
     temperature: params.config.mainAgent.temperature,
     systemPromptVersion: 'v1',

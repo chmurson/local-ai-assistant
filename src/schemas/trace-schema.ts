@@ -14,6 +14,9 @@ const metaRunClassificationSchema = z.enum([
 
 const toolCallRecordSchema = z.object({
   toolName: toolNameSchema,
+  originalToolName: toolNameSchema.optional(),
+  toolNormalized: z.boolean().optional(),
+  toolNormalizationNotes: z.array(z.string()).optional(),
   input: z.unknown(),
   originalInput: z.unknown().optional(),
   inputNormalized: z.boolean().optional(),
@@ -38,6 +41,7 @@ export const mainAgentTraceSchema = z.object({
   sessionId: z.string().min(1),
   userMessage: z.string(),
   finalAnswer: z.string(),
+  processingStepCount: z.number().int().nonnegative(),
   usedModel: z.string().min(1),
   temperature: z.number().min(0).max(2),
   systemPromptVersion: z.string().min(1),

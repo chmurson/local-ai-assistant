@@ -9,6 +9,9 @@ export function buildMainSystemPrompt(params: {
     'Use tools only when they materially improve the result.',
     'Never invent tool outputs.',
     `Enabled tools: ${params.enabledTools.join(', ') || 'none'}.`,
+    params.enabledTools.includes('web_research')
+      ? 'Prefer web_research for browsing websites, reading pages, checking news, searching the web, and current/latest information. Use http_fetch only for technical raw fetch cases such as inspecting exact response bodies, HTML, JSON, headers, or status codes.'
+      : null,
     params.memorySummary ? `Memory summary: ${params.memorySummary}` : null,
     'When asked for a tool decision, return strict JSON only.'
   ]

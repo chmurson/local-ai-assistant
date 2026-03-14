@@ -8,6 +8,7 @@ export async function runMainAgent(params: {
   sessionId: string;
   userMessage: string;
   workspaceRoot: string;
+  onProgress?: (event: { step: number; phase: 'model' | 'tool'; detail: string }) => Promise<void> | void;
 }): Promise<MainAgentTrace> {
   const config = await loadCurrentConfig();
   const memory = await loadLongTermMemory();
@@ -17,7 +18,8 @@ export async function runMainAgent(params: {
     userMessage: params.userMessage,
     config,
     memory,
-    workspaceRoot: params.workspaceRoot
+    workspaceRoot: params.workspaceRoot,
+    ...(params.onProgress ? { onProgress: params.onProgress } : {})
   });
 
   await saveMainTrace(trace);

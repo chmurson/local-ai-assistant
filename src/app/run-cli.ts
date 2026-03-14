@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { resolve } from 'node:path';
 import { createId } from '../utils/id.js';
 import { loadCurrentConfig, loadProposedConfig, saveProposedConfig } from '../core/config-store.js';
+import { formatUserFacingAssistantReply } from '../core/assistant-response-format.js';
 import { loadLongTermMemory } from '../core/memory-store.js';
 import { buildMetaStatusReport, runManualMetaReflection } from '../core/meta-operator.js';
 import { processUserTurn } from '../core/process-user-turn.js';
@@ -164,7 +165,7 @@ export async function runCli(): Promise<void> {
           userMessage: line,
           workspaceRoot
         });
-        console.log(`\nAgent> ${result.trace.finalAnswer}`);
+        console.log(`\nAgent> ${formatUserFacingAssistantReply(result.trace)}`);
         if (result.metaQueued) {
           console.log('\nMeta> queued for deferred run after inactivity.');
         } else {

@@ -32,6 +32,15 @@ function wantsSearchOrApi(message: string): boolean {
   return lowered.includes('search') || lowered.includes('algolia') || lowered.includes('api');
 }
 
+function isOfficialHackerNewsApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'hacker-news.firebaseio.com' && parsed.pathname.startsWith('/v0/');
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeHackerNewsHttpFetch(params: {
   userMessage?: string;
   input: unknown;
@@ -46,6 +55,10 @@ export function normalizeHackerNewsHttpFetch(params: {
 
   const proposedUrl = getUrl(params.input);
   if (!proposedUrl || !mentionsHackerNews(params.userMessage)) {
+    return { input: params.input, changed: false };
+  }
+
+  if (isOfficialHackerNewsApiUrl(proposedUrl)) {
     return { input: params.input, changed: false };
   }
 

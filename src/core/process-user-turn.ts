@@ -6,11 +6,13 @@ export async function processUserTurn(params: {
   sessionId: string;
   userMessage: string;
   workspaceRoot: string;
+  onProgress?: (event: { step: number; phase: 'model' | 'tool'; detail: string }) => Promise<void> | void;
 }): Promise<{ trace: MainAgentTrace; metaQueued: boolean }> {
   const trace = await runMainAgent({
     sessionId: params.sessionId,
     userMessage: params.userMessage,
-    workspaceRoot: params.workspaceRoot
+    workspaceRoot: params.workspaceRoot,
+    ...(params.onProgress ? { onProgress: params.onProgress } : {})
   });
 
   const metaQueued = queueTraceForMeta(trace);

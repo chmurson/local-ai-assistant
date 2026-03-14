@@ -18,6 +18,9 @@ export interface MetaOperatorReview {
 
 export interface ToolCallRecord {
   toolName: ToolName;
+  originalToolName?: ToolName;
+  toolNormalized?: boolean;
+  toolNormalizationNotes?: string[];
   input: unknown;
   originalInput?: unknown;
   inputNormalized?: boolean;
@@ -59,6 +62,7 @@ export interface MainAgentTrace {
   sessionId: string;
   userMessage: string;
   finalAnswer: string;
+  processingStepCount: number;
   usedModel: string;
   temperature: number;
   systemPromptVersion: string;

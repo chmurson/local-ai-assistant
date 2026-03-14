@@ -14,7 +14,7 @@ This directory now has one source of truth:
 | 3 | hardening | done | Telegram secret handling cleanup, user-facing reply cleanup, and docs refresh |
 | 4 | process | done | Rework task and plan management so repo progress is explicit and auditable |
 | 5 | capability | done | Rework meta execution so it is measurable, inactivity-driven, and historically traceable |
-| 6 | capability | planned | Introduce a scalable retrieval/tool architecture with source-aware fetch behavior and MCP-oriented boundaries |
+| 6 | capability | in_progress | Introduce a scalable retrieval/tool architecture with source-aware fetch behavior and MCP-oriented boundaries |
 
 ## Conventions For New Steps
 

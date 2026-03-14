@@ -1,8 +1,8 @@
 # Step 6
 
-Status: planned  
+Status: in_progress  
 Type: capability  
-Updated: 2026-03-13
+Updated: 2026-03-14
 
 ## Goal
 
@@ -21,10 +21,11 @@ This step should turn that drift into a deliberate architecture.
 
 ## Acceptance
 
+- [x] Introduce the first external MCP-backed retrieval capability without checking vendor code into the repo
 - [ ] Define a retrieval/profile abstraction for source-aware fetch behavior
-- [ ] Decide which retrieval capabilities stay native vs move behind MCP
+- [x] Decide the first slice should move generic web research behind MCP rather than expand bespoke fetch logic
 - [ ] Reduce prompt bloat by keeping site-specific guidance outside the base system prompt
-- [ ] Standardize how tool-heavy outputs are summarized for terminal/operator channels
+- [x] Standardize the first MCP-backed web result so the model receives compact evidence rather than raw crawler dumps
 - [ ] Document the long-term boundary between raw tools, higher-level retrieval profiles, and possible skills/playbooks
 
 ## Planned Work
@@ -48,9 +49,16 @@ This step should turn that drift into a deliberate architecture.
    - concise by default
    - richer output only when explicitly requested
 
-4. Identify the first profile to model end-to-end.
-   Recommended first candidate:
-   - Hacker News
+4. Prepare the first external retrieval provider end-to-end.
+   Implemented first slice:
+   - local `web-search-mcp` bootstrap and runtime wrapper
+   - installation kept outside git in `.external-tools/`
+   - setup instructions and bootstrap scripts kept versioned
+   - app-level `web_research` tool uses MCP `stdio` and returns compact results
+   Implemented second slice:
+   - app-side tool-request normalization can now rewrite `http_fetch` into `web_research`
+   - this is used for generic search/latest/current-info intents without exact user-provided URLs
+   - the trace records both the original tool request and the normalized one
 
 5. Document the architecture clearly enough that future MCP/tool work can land into a stable shape instead of adding more one-off fixes.
 
@@ -59,9 +67,15 @@ This step should turn that drift into a deliberate architecture.
 - Decide whether retrieval profiles should live in config, code, or external metadata files.
 - Decide whether source-aware behavior should be deterministic app logic, model-visible hints, or both.
 - Decide how much of this should be generalized before the first real MCP integration lands.
+- Decide how the future in-repo MCP client should expose external capabilities to the main agent without leaking large raw payloads.
 
 ## Relevant Files
 
+- `scripts/setup-web-search-mcp.sh`
+- `scripts/run-web-search-mcp.sh`
+- `docs/web-search-mcp-setup.md`
+- `src/core/mcp-web-search-client.ts`
+- `src/tools/web-research.ts`
 - `src/core/tool-runner.ts`
 - `src/core/tool-input-normalizer.ts`
 - `src/core/tool-output-normalizer.ts`
