@@ -19,3 +19,30 @@ test('detectInternalDecisionLeak recovers finalAnswer when present', () => {
   assert.equal(result.leaked, true);
   assert.equal(result.recoveredFinalAnswer, 'Pogoda we Wrocławiu to 12°C.');
 });
+
+test('detectInternalDecisionLeak ignores a normal plain-text answer', () => {
+  const result = detectInternalDecisionLeak(
+    'Pogoda we Wrocławiu to około 12°C i umiarkowane zachmurzenie.'
+  );
+
+  assert.equal(result.leaked, false);
+  assert.equal(result.recoveredFinalAnswer, undefined);
+});
+
+test('detectInternalDecisionLeak ignores unrelated JSON payloads', () => {
+  const result = detectInternalDecisionLeak(
+    '{"temperatureC":12,"condition":"partly cloudy","city":"Wrocław"}'
+  );
+
+  assert.equal(result.leaked, false);
+  assert.equal(result.recoveredFinalAnswer, undefined);
+});
+
+test('detectInternalDecisionLeak ignores text that merely contains braces', () => {
+  const result = detectInternalDecisionLeak(
+    'Znalazłem sekcję {aktualna pogoda} i wygląda na to, że będzie około 12°C.'
+  );
+
+  assert.equal(result.leaked, false);
+  assert.equal(result.recoveredFinalAnswer, undefined);
+});
