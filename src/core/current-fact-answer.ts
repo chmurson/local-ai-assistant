@@ -22,8 +22,30 @@ function normalizeWhitespace(value: string): string {
 function cleanExtractedName(value: string): string {
   return normalizeWhitespace(value)
     .replace(/\s+is$/i, '')
+    .replace(/,\s*(?:ph\.?d\.?|m\.?d\.?|dr\.?|prof\.?)$/i, '')
     .replace(/[.,;:]+$/g, '')
     .trim();
+}
+
+function normalizeResultUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.toLowerCase().endsWith('bing.com')) {
+      return url;
+    }
+
+    const encodedTarget = parsed.searchParams.get('u');
+    if (!encodedTarget || !encodedTarget.startsWith('a1')) {
+      return url;
+    }
+
+    const base64Value = encodedTarget.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+    const padded = `${base64Value}${'='.repeat((4 - (base64Value.length % 4)) % 4)}`;
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    return decoded.startsWith('http://') || decoded.startsWith('https://') ? decoded : url;
+  } catch {
+    return url;
+  }
 }
 
 function extractRoleLabel(message: string): string | null {
@@ -40,7 +62,7 @@ function extractSubjectLabel(message: string): string | null {
 
 function resultLooksOfficial(url: string): boolean {
   try {
-    const host = new URL(url).hostname.toLowerCase();
+    const host = new URL(normalizeResultUrl(url)).hostname.toLowerCase();
     return host.endsWith('.gov') || host.includes('whitehouse.gov') || host.includes('govtrack.us');
   } catch {
     return false;
@@ -49,9 +71,25 @@ function resultLooksOfficial(url: string): boolean {
 
 function extractNameFromTitle(title: string, roleLabel: string): string | null {
   const escapedRole = roleLabel.replace(/\s+/g, '\\s+');
-  const match = title.match(new RegExp(`^${escapedRole}\\s+(.+?)(?:\\s+[\\-|\\|]|$)`, 'i'));
-  const value = match?.[1]?.trim();
-  return value ? cleanExtractedName(value) : null;
+  const patterns = [
+    new RegExp(`^${escapedRole}\\s+(.+?)(?:\\s+[\\-|\\|]|$)`, 'i'),
+    new RegExp(`\\bbiography\\s+([A-Z][A-Za-z.]+(?:\\s+(?:[A-Z][A-Za-z.]+|[A-Z]\\.)){1,3})(?:,\\s*[A-Za-z. ]+)?\\s+[-–]`, 'i'),
+    new RegExp(`([A-Z][A-Za-z.]+(?:\\s+(?:[A-Z][A-Za-z.]+|[A-Z]\\.)){1,3})(?:,\\s*[A-Za-z. ]+)?\\s+[-–]\\s+${escapedRole}\\b`, 'i')
+  ];
+
+  for (const pattern of patterns) {
+    const value = pattern.exec(title)?.[1]?.trim();
+    if (!value) {
+      continue;
+    }
+
+    const cleaned = cleanExtractedName(value);
+    if (isLikelyPersonName(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  return null;
 }
 
 function extractNameFromDescription(description: string, roleLabel: string): string | null {
@@ -92,7 +130,7 @@ function isLikelyPersonName(name: string): boolean {
     return false;
   }
 
-  return /[A-Z][a-z]+(?:\s+[A-Z][a-z.]+){1,3}/.test(normalized);
+  return /^[A-Z][A-Za-z.]+(?:\s+(?:[A-Z][A-Za-z.]+|[A-Z]\.)){1,3}$/.test(normalized);
 }
 
 function collectSearchResults(toolCalls: ToolCallRecord[]): SearchResultEvidence[] {
@@ -125,7 +163,7 @@ function collectSearchResults(toolCalls: ToolCallRecord[]): SearchResultEvidence
       ) {
         results.push({
           title: normalizeWhitespace(record.title),
-          url: record.url,
+          url: normalizeResultUrl(record.url),
           description: normalizeWhitespace(record.description)
         });
       }

@@ -104,3 +104,67 @@ test('buildDeterministicCurrentFactAnswer ignores interrogative pseudo-names and
   assert.match(answer, /^Current president of USA: Donald (?:J\.|John) Trump\. Source: https?:\/\//);
   assert.doesNotMatch(answer, /Current president of USA: Who\./);
 });
+
+test('buildDeterministicCurrentFactAnswer ignores generic office pages from recent USA trace and keeps the person name', () => {
+  const answer = buildDeterministicCurrentFactAnswer({
+    userMessage: 'Who is president of USA ?',
+    toolCalls: [
+      buildWebResearchCall([
+        {
+          title: 'President of the United States - Wikipedia',
+          url: 'https://www.bing.com/ck/a?!&&p=c37f7f871e0127d7c0a9cd182c5aa1f018d56eec394ed832e0a3c0d8f1be69a1JmltdHM9MTc3MzUzMjgwMA&ptn=3&ver=2&hsh=4&fclid=0c3603aa-242f-6761-3265-14b7254f6650&u=a1aHR0cHM6Ly9lbi53aWtpcGVkaWEub3JnL3dpa2kvUHJlc2lkZW50X29mX3RoZV9Vbml0ZWRfU3RhdGVz&ntb=1',
+          description:
+            'The president of the United States (POTUS) is the head of state and head of government of the United States.'
+        },
+        {
+          title: 'Who Is The President Of The USA? - All About America',
+          url: 'https://www.bing.com/ck/a?!&&p=02b8543899c35b3decc41982513773efdad730ec7cf9d87c4a3e9bfc80bdd5c6JmltdHM9MTc3MzUzMjgwMA&ptn=3&ver=2&hsh=4&fclid=0c3603aa-242f-6761-3265-14b7254f6650&u=a1aHR0cHM6Ly9hbGxhYm91dGFtZXJpY2EuY29tL3VuaXRlZC1zdGF0ZXMvd2hvLWlzLXRoZS1wcmVzaWRlbnQtb2YtdGhlLXVzYS5odG1s&ntb=1',
+          description:
+            'Apr 15, 2025 · As of 2025, the President of the United States is Donald J. Trump, a real estate mogul, television personality, and political outsider who reshaped modern American politics.'
+        },
+        {
+          title: 'Donald Trump | Birthday, Age, Education, Biography, Impeachments ...',
+          url: 'https://www.britannica.com/biography/Donald-Trump',
+          description:
+            'Donald Trump (born June 14, 1946, New York, New York, U.S.) 45th president of the United States.'
+        }
+      ])
+    ]
+  });
+
+  assert.equal(
+    answer,
+    'Current president of USA: Donald J. Trump. Source: https://allaboutamerica.com/united-states/who-is-the-president-of-the-usa.html'
+  );
+});
+
+test('buildDeterministicCurrentFactAnswer extracts person name from official Poland biography title from recent trace', () => {
+  const answer = buildDeterministicCurrentFactAnswer({
+    userMessage: 'current president of Poland',
+    toolCalls: [
+      buildWebResearchCall([
+        {
+          title: 'Wikipedia en.wikipedia.org › wiki › Karol_Nawrocki Karol Nawrocki - Wikipedia',
+          url: 'https://en.wikipedia.org/wiki/Karol_Nawrocki',
+          description: 'No description available'
+        },
+        {
+          title:
+            'President of the Republic of Poland president.pl › home page › biography Karol Nawrocki, PhD. – President of the Republic of Poland \\ President \\ Biography \\ Oficjalna strona Prezydenta Rzeczypospolitej Polskiej',
+          url: 'https://www.president.pl/president/biography',
+          description: 'No description available'
+        },
+        {
+          title: 'Wikipedia en.wikipedia.org › wiki › President_of_Poland President of Poland - Wikipedia',
+          url: 'https://en.wikipedia.org/wiki/President_of_Poland',
+          description: 'No description available'
+        }
+      ])
+    ]
+  });
+
+  assert.equal(
+    answer,
+    'Current president of Poland: Karol Nawrocki. Source: https://www.president.pl/president/biography'
+  );
+});

@@ -26,6 +26,22 @@ const decisionSchema = z
   })
   .strict();
 
+interface MainAgentDependencies {
+  generateText: typeof generateText;
+  pickMainAgentModel: typeof pickMainAgentModel;
+  runTool: typeof runTool;
+  createId: typeof createId;
+  nowIso: typeof nowIso;
+}
+
+const defaultMainAgentDependencies: MainAgentDependencies = {
+  generateText,
+  pickMainAgentModel,
+  runTool,
+  createId,
+  nowIso
+};
+
 function isPlaceholderFinalAnswer(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   return normalized === 'done' || normalized === 'done.' || normalized === 'no plan available.';
@@ -91,8 +107,9 @@ async function getDecisionWithRetry(params: {
   maxOutputTokens: number;
   systemPrompt: string;
   decisionPrompt: string;
+  generateTextFn: typeof generateText;
 }): Promise<z.infer<typeof decisionSchema> | null> {
-  const first = await generateText({
+  const first = await params.generateTextFn({
     model: params.model,
     temperature: params.temperature,
     maxOutputTokens: params.maxOutputTokens,
@@ -121,7 +138,7 @@ async function getDecisionWithRetry(params: {
     `Previous output: ${first.text}`
   ].join('\n');
 
-  const second = await generateText({
+  const second = await params.generateTextFn({
     model: params.model,
     temperature: Math.min(params.temperature, 0.2),
     maxOutputTokens: params.maxOutputTokens,
@@ -147,8 +164,9 @@ async function getPlainTextFinalAnswerWithRetry(params: {
   maxOutputTokens: number;
   systemPrompt: string;
   finalPrompt: string;
+  generateTextFn: typeof generateText;
 }): Promise<string> {
-  const first = await generateText({
+  const first = await params.generateTextFn({
     model: params.model,
     temperature: params.temperature,
     maxOutputTokens: params.maxOutputTokens,
@@ -172,7 +190,7 @@ async function getPlainTextFinalAnswerWithRetry(params: {
     `Previous output: ${first.text}`
   ].join('\n');
 
-  const second = await generateText({
+  const second = await params.generateTextFn({
     model: params.model,
     temperature: Math.min(params.temperature, 0.2),
     maxOutputTokens: params.maxOutputTokens,
@@ -192,6 +210,7 @@ async function groundFinalAnswerToEvidence(params: {
   systemPrompt: string;
   userMessage: string;
   evidenceSummary: string;
+  generateTextFn: typeof generateText;
 }): Promise<string> {
   const groundingPrompt = [
     `User message: ${params.userMessage}`,
@@ -203,7 +222,7 @@ async function groundFinalAnswerToEvidence(params: {
     'Do not output JSON or tool-call markup.'
   ].join('\n');
 
-  const response = await generateText({
+  const response = await params.generateTextFn({
     model: params.model,
     temperature: Math.min(params.temperature, 0.2),
     maxOutputTokens: params.maxOutputTokens,
@@ -216,8 +235,13 @@ async function groundFinalAnswerToEvidence(params: {
   return response.text.trim();
 }
 
-function pushStep(steps: AgentStepRecord[], kind: AgentStepRecord['kind'], content: string): void {
-  steps.push({ kind, content, timestamp: nowIso() });
+function pushStep(
+  steps: AgentStepRecord[],
+  kind: AgentStepRecord['kind'],
+  content: string,
+  timestampNow: () => string
+): void {
+  steps.push({ kind, content, timestamp: timestampNow() });
 }
 
 function getHttpBody(output: unknown): string | null {
@@ -424,13 +448,18 @@ export async function executeMainAgent(params: {
   memory: LongTermMemory;
   workspaceRoot: string;
   onProgress?: (event: { step: number; phase: 'model' | 'tool'; detail: string }) => Promise<void> | void;
+  dependencies?: Partial<MainAgentDependencies>;
 }): Promise<MainAgentTrace> {
-  const traceId = createId('trace');
-  const startedAt = nowIso();
+  const deps: MainAgentDependencies = {
+    ...defaultMainAgentDependencies,
+    ...params.dependencies
+  };
+  const traceId = deps.createId('trace');
+  const startedAt = deps.nowIso();
   const steps: AgentStepRecord[] = [];
   const toolCalls: ToolCallRecord[] = [];
 
-  const model = pickMainAgentModel(params.config, params.userMessage);
+  const model = deps.pickMainAgentModel(params.config, params.userMessage);
   const webIntent = classifyWebIntent(params.userMessage);
   const webBehavior = selectWebBehavior(webIntent);
   const systemPrompt = buildMainSystemPrompt({
@@ -477,7 +506,8 @@ export async function executeMainAgent(params: {
         temperature: params.config.mainAgent.temperature,
         maxOutputTokens: params.config.mainAgent.maxOutputTokens,
         systemPrompt: decisionSystemPrompt,
-        decisionPrompt
+        decisionPrompt,
+        generateTextFn: deps.generateText
       });
       const forcedInitialToolRequest =
         toolCalls.length === 0 && shouldForceInitialWebEvidence(webBehavior)
@@ -489,7 +519,7 @@ export async function executeMainAgent(params: {
           : null;
 
       if (!decision && !forcedInitialToolRequest) {
-        pushStep(steps, 'reasoning', 'Agent returned invalid decision JSON; skipping tool step.');
+        pushStep(steps, 'reasoning', 'Agent returned invalid decision JSON; skipping tool step.', deps.nowIso);
         break;
       }
 
@@ -506,7 +536,8 @@ export async function executeMainAgent(params: {
         pushStep(
           steps,
           'reasoning',
-          `Recovered from invalid decision JSON by forcing ${forcedInitialToolRequest.toolName} for classified intent ${webIntent.intent}${webIntent.subtype ? `/${webIntent.subtype}` : ''}.`
+          `Recovered from invalid decision JSON by forcing ${forcedInitialToolRequest.toolName} for classified intent ${webIntent.intent}${webIntent.subtype ? `/${webIntent.subtype}` : ''}.`,
+          deps.nowIso
         );
       }
 
@@ -520,7 +551,8 @@ export async function executeMainAgent(params: {
         pushStep(
           steps,
           'reasoning',
-          `Overrode direct answer because classified intent ${webIntent.intent}${webIntent.subtype ? `/${webIntent.subtype}` : ''} requires web evidence first.`
+          `Overrode direct answer because classified intent ${webIntent.intent}${webIntent.subtype ? `/${webIntent.subtype}` : ''} requires web evidence first.`,
+          deps.nowIso
         );
       }
 
@@ -531,7 +563,7 @@ export async function executeMainAgent(params: {
         shouldUseTool: effectiveDecision.shouldUseTool,
         toolCallsCount: toolCalls.length
       });
-      pushStep(steps, 'reasoning', `Agent decided: ${planSummary}`);
+      pushStep(steps, 'reasoning', `Agent decided: ${planSummary}`, deps.nowIso);
 
       if (!effectiveDecision.shouldUseTool) {
         finalAnswer = effectiveDecision.finalAnswer?.trim() ?? '';
@@ -540,7 +572,8 @@ export async function executeMainAgent(params: {
           'final',
           finalAnswer
             ? 'Agent returned a direct final answer without additional tools.'
-            : 'Agent skipped tools but did not provide finalAnswer; falling back to final answer generation.'
+            : 'Agent skipped tools but did not provide finalAnswer; falling back to final answer generation.',
+          deps.nowIso
         );
         break;
       }
@@ -550,7 +583,7 @@ export async function executeMainAgent(params: {
       }
 
       if (toolCalls.length >= maxToolIterations) {
-        pushStep(steps, 'final', 'Tool limit reached; finalizing response.');
+        pushStep(steps, 'final', 'Tool limit reached; finalizing response.', deps.nowIso);
         break;
       }
 
@@ -565,14 +598,15 @@ export async function executeMainAgent(params: {
         pushStep(
           steps,
           'reasoning',
-          `Skipped repeated web_research request for ${effectiveDecision.toolName}; identical successful result already exists.`
+          `Skipped repeated web_research request for ${effectiveDecision.toolName}; identical successful result already exists.`,
+          deps.nowIso
         );
-        pushStep(steps, 'final', 'Repeated web research request skipped; finalizing from existing results.');
+        pushStep(steps, 'final', 'Repeated web research request skipped; finalizing from existing results.', deps.nowIso);
         break;
       }
 
-      pushStep(steps, 'tool_call', `Tool ${effectiveDecision.toolName} was invoked.`);
-      const toolResult = await runTool({
+      pushStep(steps, 'tool_call', `Tool ${effectiveDecision.toolName} was invoked.`, deps.nowIso);
+      const toolResult = await deps.runTool({
         toolName: effectiveDecision.toolName,
         input: effectiveDecision.toolInput ?? {},
         userMessage: params.userMessage,
@@ -592,16 +626,17 @@ export async function executeMainAgent(params: {
         'tool_result',
         toolResult.success
           ? `Tool ${toolResult.toolName} finished successfully${toolResult.toolNormalized ? ` after tool normalization from ${effectiveDecision.toolName}` : ''}${toolResult.inputNormalized ? ' after input normalization' : ''}${toolResult.outputCapped ? ' with capped output' : ''}.`
-          : `Tool ${toolResult.toolName} failed: ${toolResult.error ?? 'unknown error'}`
+          : `Tool ${toolResult.toolName} failed: ${toolResult.error ?? 'unknown error'}`,
+        deps.nowIso
       );
       if (toolResult.toolNormalizationNotes && toolResult.toolNormalizationNotes.length > 0) {
         for (const note of toolResult.toolNormalizationNotes) {
-          pushStep(steps, 'reasoning', note);
+          pushStep(steps, 'reasoning', note, deps.nowIso);
         }
       }
       if (toolResult.inputNormalizationNotes && toolResult.inputNormalizationNotes.length > 0) {
         for (const note of toolResult.inputNormalizationNotes) {
-          pushStep(steps, 'reasoning', note);
+          pushStep(steps, 'reasoning', note, deps.nowIso);
         }
       }
 
@@ -616,7 +651,8 @@ export async function executeMainAgent(params: {
         pushStep(
           steps,
           'final',
-          `Read of ${readFilePath} is outside workspace scope; asking user to paste the file instead of retrying.`
+          `Read of ${readFilePath} is outside workspace scope; asking user to paste the file instead of retrying.`,
+          deps.nowIso
         );
         break;
       }
@@ -631,8 +667,8 @@ export async function executeMainAgent(params: {
       ) {
         const body = getHttpBody(toolResult.output);
         if (body && looksLikeHtml(body)) {
-          pushStep(steps, 'tool_call', 'Auto tool extract_text was invoked to clean fetched HTML.');
-          const extractResult = await runTool({
+          pushStep(steps, 'tool_call', 'Auto tool extract_text was invoked to clean fetched HTML.', deps.nowIso);
+          const extractResult = await deps.runTool({
             toolName: 'extract_text',
             input: { html: body, aggressive: true, maxChars: 20000 },
             userMessage: params.userMessage,
@@ -652,7 +688,8 @@ export async function executeMainAgent(params: {
             'tool_result',
             extractResult.success
               ? `Auto tool extract_text finished successfully${extractResult.outputCapped ? ' with capped output' : ''}.`
-              : `Auto tool extract_text failed: ${extractResult.error ?? 'unknown error'}`
+              : `Auto tool extract_text failed: ${extractResult.error ?? 'unknown error'}`,
+            deps.nowIso
           );
         }
       }
@@ -690,7 +727,8 @@ export async function executeMainAgent(params: {
         temperature: params.config.mainAgent.temperature,
         maxOutputTokens: params.config.mainAgent.maxOutputTokens,
         systemPrompt,
-        finalPrompt: finalizePrompt
+        finalPrompt: finalizePrompt,
+        generateTextFn: deps.generateText
       });
       if (!usableToolEvidence && toolCalls.length > 0) {
         finalAnswer = 'I could not verify the answer from the available tool results.';
@@ -698,7 +736,7 @@ export async function executeMainAgent(params: {
       if (!finalAnswer) {
         finalAnswer = 'I could not produce a valid final answer.';
       }
-      pushStep(steps, 'final', 'Agent returned a final answer after tool execution.');
+      pushStep(steps, 'final', 'Agent returned a final answer after tool execution.', deps.nowIso);
     }
 
     const deterministicCurrentFactAnswer = buildDeterministicCurrentFactAnswer({
@@ -707,7 +745,7 @@ export async function executeMainAgent(params: {
     });
     if (deterministicCurrentFactAnswer) {
       finalAnswer = deterministicCurrentFactAnswer;
-      pushStep(steps, 'final', 'Built deterministic current-fact answer from tool evidence.');
+      pushStep(steps, 'final', 'Built deterministic current-fact answer from tool evidence.', deps.nowIso);
     } else if (finalAnswer) {
       const usableToolEvidence = hasUsableToolEvidence(toolCalls);
       if (usableToolEvidence) {
@@ -717,7 +755,8 @@ export async function executeMainAgent(params: {
           maxOutputTokens: params.config.mainAgent.maxOutputTokens,
           systemPrompt,
           userMessage: params.userMessage,
-          evidenceSummary: buildToolEvidenceSummary(toolCalls)
+          evidenceSummary: buildToolEvidenceSummary(toolCalls),
+          generateTextFn: deps.generateText
         });
       }
     }
@@ -725,13 +764,13 @@ export async function executeMainAgent(params: {
     success = false;
     error = caughtError instanceof Error ? caughtError.message : 'Unknown main agent error';
     finalAnswer = 'Przepraszam, wystapil blad podczas realizacji zadania.';
-    pushStep(steps, 'final', `Agent failed: ${error}`);
+    pushStep(steps, 'final', `Agent failed: ${error}`, deps.nowIso);
   }
 
   if (success && isPlaceholderFinalAnswer(finalAnswer)) {
     success = false;
     error = 'Final answer fell back to placeholder output.';
-    pushStep(steps, 'final', error);
+    pushStep(steps, 'final', error, deps.nowIso);
     finalAnswer = planSummary || 'I could not produce a valid final answer.';
   }
 
@@ -739,11 +778,11 @@ export async function executeMainAgent(params: {
   if (success && leakedDecision.leaked) {
     if (leakedDecision.recoveredFinalAnswer) {
       finalAnswer = leakedDecision.recoveredFinalAnswer;
-      pushStep(steps, 'final', 'Recovered final answer from leaked internal decision JSON.');
+      pushStep(steps, 'final', 'Recovered final answer from leaked internal decision JSON.', deps.nowIso);
     } else {
       success = false;
       error = 'Final answer leaked internal decision JSON.';
-      pushStep(steps, 'final', error);
+      pushStep(steps, 'final', error, deps.nowIso);
       finalAnswer = planSummary ?? 'I could not produce a valid final answer.';
     }
   }
@@ -761,7 +800,7 @@ export async function executeMainAgent(params: {
     toolCalls,
     steps,
     startedAt,
-    finishedAt: nowIso(),
+    finishedAt: deps.nowIso(),
     success,
     ...(error ? { error } : {})
   };
