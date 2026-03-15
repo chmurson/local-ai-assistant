@@ -22,6 +22,7 @@ export async function runTelegram(): Promise<void> {
       { command: 'help', description: 'List supported bot commands' },
       { command: 'meta_status', description: 'Show queued meta scheduler status' },
       { command: 'meta_history', description: 'Show recent meta run history' },
+      { command: 'web_research_stats', description: 'Show rough web_research metrics' },
       { command: 'reflect', description: 'Run queued meta reflection now' }
     ]
   });

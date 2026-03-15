@@ -9,6 +9,7 @@ import { loadLongTermMemory } from '../core/memory-store.js';
 import { buildMetaStatusReport, runManualMetaReflection } from '../core/meta-operator.js';
 import { processUserTurn } from '../core/process-user-turn.js';
 import { loadMetaHistory } from '../core/trace-store.js';
+import { buildWebResearchStatsReport } from '../core/web-research-stats.js';
 import type { MetaHistoryDiffEntry } from '../types/trace.js';
 
 function printHelp(): void {
@@ -20,6 +21,7 @@ function printHelp(): void {
   console.log('/memory   - print long-term memory');
   console.log('/meta-status - print deferred meta scheduler state');
   console.log('/meta-history - print meta run history');
+  console.log('/web-research-stats - print rough web_research metrics');
   console.log('/reflect  - run queued meta reflection now');
   console.log('/exit     - quit');
 }
@@ -146,6 +148,11 @@ export async function runCli(): Promise<void> {
 
       if (line === '/meta-status') {
         console.log(await buildMetaStatusReport());
+        continue;
+      }
+
+      if (line === '/web-research-stats') {
+        console.log(await buildWebResearchStatsReport());
         continue;
       }
 

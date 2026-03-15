@@ -6,6 +6,7 @@ import {
   buildMetaStatusReport,
   runManualMetaReflection
 } from '../../core/meta-operator.js';
+import { buildWebResearchStatsReport } from '../../core/web-research-stats.js';
 import { formatUserFacingAssistantReply } from '../../core/assistant-response-format.js';
 import { processUserTurn } from '../../core/process-user-turn.js';
 import { getOrCreateSessionId } from '../../core/session-store.js';
@@ -30,11 +31,13 @@ async function handleTelegramCommand(params: {
 
   let responseText: string | null = null;
   if (command === '/help') {
-    responseText = ['/help', '/meta_status', '/meta_history', '/reflect'].join('\n');
+    responseText = ['/help', '/meta_status', '/meta_history', '/web_research_stats', '/reflect'].join('\n');
   } else if (command === '/meta-status' || command === '/meta_status') {
     responseText = await buildMetaStatusReport();
   } else if (command === '/meta-history' || command === '/meta_history') {
     responseText = await buildCompactMetaHistoryReport();
+  } else if (command === '/web-research-stats' || command === '/web_research_stats') {
+    responseText = await buildWebResearchStatsReport();
   } else if (command === '/reflect') {
     responseText = await runManualMetaReflection();
   }
