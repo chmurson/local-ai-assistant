@@ -47,7 +47,7 @@ test('treats normalized http_fetch rewrite as duplicate when web_research alread
     userMessage: 'Pobierz newsy z filmweb.pl',
     previousToolCalls: [
       buildCall({
-        query: 'site:filmweb.pl news Pobierz newsy z filmweb.pl',
+        query: 'site:filmweb.pl news newsy z filmweb.pl',
         depth: 'summary',
         limit: 3
       })

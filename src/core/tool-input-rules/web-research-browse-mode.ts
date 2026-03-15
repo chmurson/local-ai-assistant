@@ -1,3 +1,5 @@
+import { classifyWebIntent, selectWebBehavior } from '../web-intent.js';
+
 function getUrl(input: unknown): string | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return null;
@@ -14,56 +16,6 @@ function getQuery(input: unknown): string | null {
 
   const value = (input as Record<string, unknown>).query;
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
-}
-
-function looksLikeBrowseIntent(message: string): boolean {
-  const lowered = message.toLowerCase();
-  return [
-    'search',
-    'research',
-    'look up',
-    'latest',
-    'most recent',
-    'recent',
-    'current',
-    'news',
-    'headlines',
-    'top stories',
-    'summarize',
-    'summary',
-    'browse',
-    'find',
-    'check',
-    'sprawdź',
-    'sprawdz',
-    'newsy',
-    'najnows',
-    'podsumuj',
-    'podsumowanie',
-    'artyku',
-    'wiadomo'
-  ].some((phrase) => lowered.includes(phrase));
-}
-
-function wantsExactPageRead(message: string): boolean {
-  const lowered = message.toLowerCase();
-  return [
-    'this page',
-    'exact page',
-    'exact url',
-    'specific page',
-    'page content',
-    'read the page',
-    'open this url',
-    'summarize this page',
-    'content of this page',
-    'treść strony',
-    'tresc strony',
-    'tej strony',
-    'dokładny url',
-    'dokladny url',
-    'konkretna strona'
-  ].some((phrase) => lowered.includes(phrase));
 }
 
 function urlLooksLikeListingPage(url: string): boolean {
@@ -139,7 +91,10 @@ export function normalizeWebResearchBrowseMode(params: {
     return { input: params.input, changed: false };
   }
 
-  if (wantsExactPageRead(params.userMessage) || !looksLikeBrowseIntent(params.userMessage)) {
+  const classification = classifyWebIntent(params.userMessage);
+  const behavior = selectWebBehavior(classification);
+
+  if (behavior.preferredTool !== 'web_research' || behavior.retrievalMode !== 'query') {
     return { input: params.input, changed: false };
   }
 

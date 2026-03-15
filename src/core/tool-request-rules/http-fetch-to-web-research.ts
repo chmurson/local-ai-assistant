@@ -1,4 +1,5 @@
 import type { ToolName } from '../../types/config.js';
+import { classifyWebIntent, selectWebBehavior } from '../web-intent.js';
 
 function getUrl(input: unknown): string | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -7,24 +8,6 @@ function getUrl(input: unknown): string | null {
 
   const value = (input as Record<string, unknown>).url;
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
-}
-
-function userProvidedExplicitUrl(message: string): boolean {
-  return /https?:\/\/\S+/i.test(message);
-}
-
-function shouldPreferWebResearch(message: string): boolean {
-  const lowered = message.toLowerCase();
-  return [
-    'search',
-    'research',
-    'look up',
-    'latest',
-    'most recent',
-    'recent',
-    'current',
-    'news'
-  ].some((phrase) => lowered.includes(phrase));
 }
 
 function buildSearchQuery(message: string): string {
@@ -39,6 +22,22 @@ function buildSearchQuery(message: string): string {
     .replace(/^pobierz\s+/i, '')
     .replace(/^sprawdź\s+/i, '')
     .trim();
+}
+
+function buildQueryFromUrlAndMessage(url: string, message: string): string {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    const pathTerms = parsed.pathname
+      .split('/')
+      .map((segment) => segment.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 3);
+    const baseQuery = buildSearchQuery(message);
+    return [`site:${host}`, ...pathTerms, baseQuery].filter(Boolean).join(' ').trim();
+  } catch {
+    return buildSearchQuery(message);
+  }
 }
 
 function isSearchResultUrl(url: string): boolean {
@@ -115,6 +114,16 @@ export function normalizeHttpFetchToWebResearch(params: {
     };
   }
 
+  const classification = classifyWebIntent(params.userMessage);
+  const behavior = selectWebBehavior(classification);
+  if (behavior.preferredTool !== 'web_research') {
+    return {
+      toolName: params.toolName,
+      input: params.input,
+      changed: false
+    };
+  }
+
   const proposedUrl = getUrl(params.input);
   if (proposedUrl) {
     if (isSearchResultUrl(proposedUrl) || isApiLikeUrl(proposedUrl)) {
@@ -130,17 +139,30 @@ export function normalizeHttpFetchToWebResearch(params: {
       };
     }
 
+    if (behavior.retrievalMode === 'query') {
+      return {
+        toolName: 'web_research',
+        input: {
+          query: buildQueryFromUrlAndMessage(proposedUrl, params.userMessage),
+          depth: 'summary',
+          limit: 3
+        },
+        changed: true,
+        note: `Rewrote tool request from http_fetch(${proposedUrl}) to web_research query mode based on classified user intent.`
+      };
+    }
+
     return {
       toolName: 'web_research',
       input: {
         url: proposedUrl
       },
       changed: true,
-      note: `Rewrote tool request from http_fetch(${proposedUrl}) to web_research page mode for browsing/search intent.`
+      note: `Rewrote tool request from http_fetch(${proposedUrl}) to web_research page mode based on classified user intent.`
     };
   }
 
-  if (userProvidedExplicitUrl(params.userMessage) || shouldPreferWebResearch(params.userMessage)) {
+  if (behavior.retrievalMode === 'query') {
     return {
       toolName: 'web_research',
       input: {
@@ -155,7 +177,7 @@ export function normalizeHttpFetchToWebResearch(params: {
 
   return {
     toolName: params.toolName,
-    input: params.input,
-    changed: false
-  };
-}
+      input: params.input,
+      changed: false
+    };
+  }
