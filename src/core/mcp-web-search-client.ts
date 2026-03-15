@@ -7,6 +7,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 export interface WebResearchQueryResult {
   mode: 'summary' | 'full';
   query: string;
+  fallbackQuery?: string;
   results: Array<{
     title: string;
     url: string;
@@ -123,6 +124,50 @@ function buildFallbackQueryFromUrl(url: string): string {
   }
 }
 
+function addCandidateQuery(candidates: string[], seen: Set<string>, query: string): void {
+  const normalized = normalizeLine(query).replace(/[?!.,:;]+$/g, '').trim();
+  if (!normalized) {
+    return;
+  }
+
+  const key = normalized.toLowerCase();
+  if (seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  candidates.push(normalized);
+}
+
+export function buildSearchFallbackQueries(query: string): string[] {
+  const candidates: string[] = [];
+  const normalized = normalizeLine(query).replace(/[?!.,:;]+$/g, '').trim();
+  const seen = new Set<string>(normalized ? [normalized.toLowerCase()] : []);
+
+  if (!normalized) {
+    return candidates;
+  }
+
+  addCandidateQuery(candidates, seen, normalized);
+
+  const roleOfMatch = normalized.match(/^(?:who\s+is\s+(?:the\s+)?)?(.+?)\s+of\s+(.+)$/i);
+  if (roleOfMatch) {
+    const role = roleOfMatch[1]?.trim();
+    const subject = roleOfMatch[2]?.trim();
+    if (role && subject) {
+      addCandidateQuery(candidates, seen, `current ${role} of ${subject}`);
+      addCandidateQuery(candidates, seen, `${role} of ${subject}`);
+    }
+  } else {
+    const whoIsMatch = normalized.match(/^who\s+is\s+(?:the\s+)?(.+)$/i);
+    if (whoIsMatch?.[1]) {
+      addCandidateQuery(candidates, seen, whoIsMatch[1]);
+    }
+  }
+
+  return candidates.slice(0, 2);
+}
+
 async function assertWrapperExists(): Promise<void> {
   await access(MCP_WRAPPER_PATH, constants.X_OK);
 }
@@ -173,39 +218,94 @@ function extractTextContent(result: unknown): string {
     .trim();
 }
 
+type WebSearchClientLike = Pick<Client, 'callTool'>;
+
+async function callSearchTool(params: {
+  client: WebSearchClientLike;
+  query: string;
+  depth: 'summary' | 'full';
+  limit: number;
+}): Promise<Array<{
+  title: string;
+  url: string;
+  description: string;
+  contentPreview?: string;
+}>> {
+  const toolName = params.depth === 'full' ? 'full-web-search' : 'get-web-search-summaries';
+  const result = await params.client.callTool({
+    name: toolName,
+    arguments:
+      params.depth === 'full'
+        ? {
+            query: params.query,
+            limit: params.limit,
+            includeContent: true,
+            maxContentLength: 2500
+          }
+        : {
+            query: params.query,
+            limit: params.limit
+          }
+  });
+
+  return parseSearchResponse(extractTextContent(result));
+}
+
+export async function runWebResearchSearchWithClient(
+  client: WebSearchClientLike,
+  params: {
+    query: string;
+    depth: 'summary' | 'full';
+    limit: number;
+  }
+): Promise<WebResearchQueryResult> {
+  const safeLimit = Math.max(1, Math.min(params.limit, params.depth === 'full' ? MAX_FULL_RESULTS : MAX_QUERY_RESULTS));
+  const initialResults = await callSearchTool({
+    client,
+    query: params.query,
+    depth: params.depth,
+    limit: safeLimit
+  });
+
+  if (initialResults.length > 0) {
+    return {
+      mode: params.depth,
+      query: params.query,
+      results: initialResults
+    };
+  }
+
+  for (const fallbackQuery of buildSearchFallbackQueries(params.query)) {
+    const fallbackResults = await callSearchTool({
+      client,
+      query: fallbackQuery,
+      depth: params.depth,
+      limit: safeLimit
+    });
+
+    if (fallbackResults.length > 0) {
+      return {
+        mode: params.depth,
+        query: params.query,
+        fallbackQuery,
+        results: fallbackResults
+      };
+    }
+  }
+
+  return {
+    mode: params.depth,
+    query: params.query,
+    results: []
+  };
+}
+
 export async function runWebResearchSearch(params: {
   query: string;
   depth: 'summary' | 'full';
   limit: number;
 }): Promise<WebResearchQueryResult> {
-  return withWebSearchClient(async (client) => {
-    const safeLimit = Math.max(1, Math.min(params.limit, params.depth === 'full' ? MAX_FULL_RESULTS : MAX_QUERY_RESULTS));
-    const toolName = params.depth === 'full' ? 'full-web-search' : 'get-web-search-summaries';
-    const result = await client.callTool({
-      name: toolName,
-      arguments:
-        params.depth === 'full'
-          ? {
-              query: params.query,
-              limit: safeLimit,
-              includeContent: true,
-              maxContentLength: 2500
-            }
-          : {
-              query: params.query,
-              limit: safeLimit
-            }
-    });
-
-    const rawText = extractTextContent(result);
-    const parsedResults = parseSearchResponse(rawText);
-
-    return {
-      mode: params.depth,
-      query: params.query,
-      results: parsedResults
-    };
-  });
+  return withWebSearchClient((client) => runWebResearchSearchWithClient(client, params));
 }
 
 export async function runWebResearchPage(url: string): Promise<WebResearchPageResult> {

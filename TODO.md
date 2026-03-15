@@ -11,6 +11,7 @@
 
 - Reduce oversized tool payloads before they are passed back into the main-agent and meta-agent flows.
 - Improve `http_fetch` / web retrieval behavior so large pages are summarized or filtered earlier instead of being forwarded as raw payloads.
+- Keep the current deterministic `web_research` empty-result fallback, but evaluate a hybrid second-stage rewrite where the model may reformulate the query only after simple coded fallbacks still return no results.
 - Review the overall tool strategy and decide which capabilities should stay native in-repo versus move behind MCP servers.
 - Evaluate whether web/data-heavy tasks should be offloaded to MCP-backed tools instead of the current direct fetch/extract flow.
 - Revisit whether bespoke fetch/extract improvements are worth continuing, versus pivoting sooner to third-party tools or MCP servers for web/data-heavy tasks.
