@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeToolRequest } from './tool-request-normalizer.js';
 
-test('normalizes http_fetch news browsing intent into web_research page mode for explicit URLs', () => {
+test('normalizes http_fetch news browsing intent into web_research query mode for listing URLs', () => {
   const result = normalizeToolRequest({
     toolName: 'http_fetch',
     input: {
@@ -15,7 +15,9 @@ test('normalizes http_fetch news browsing intent into web_research page mode for
   assert.equal(result.toolNormalized, true);
   assert.equal(result.originalToolName, 'http_fetch');
   assert.deepEqual(result.input, {
-    url: 'https://filmweb.pl/news'
+    query: 'site:filmweb.pl news Pobierz newsy z filmweb.pl',
+    depth: 'summary',
+    limit: 3
   });
 });
 

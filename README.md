@@ -63,5 +63,8 @@ Instalacja trafia do nietrackowanego katalogu `.external-tools/`, a bootstrap po
 - `/memory`
 - `/meta-status`
 - `/meta-history`
+- `/web-research-stats`
 - `/reflect`
 - `/exit`
+
+Metryki i historia zmian dla `web_research` sa opisane w `docs/web-research-metrics.md`.

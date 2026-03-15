@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { buildMainSystemPrompt } from './prompts/main-system.js';
 import { detectInternalDecisionLeak } from './final-answer-guard.js';
+import { isRepeatedSuccessfulWebResearchRequest } from '../core/tool-call-deduper.js';
 import { generateText } from '../core/llm-client.js';
 import { pickMainAgentModel } from '../core/model-router.js';
 import { runTool } from '../core/tool-runner.js';
@@ -246,6 +247,23 @@ export async function executeMainAgent(params: {
 
       if (toolCalls.length >= maxToolIterations) {
         pushStep(steps, 'final', 'Tool limit reached; finalizing response.');
+        break;
+      }
+
+      if (
+        isRepeatedSuccessfulWebResearchRequest({
+          toolName: decision.toolName,
+          input: decision.toolInput ?? {},
+          userMessage: params.userMessage,
+          previousToolCalls: toolCalls
+        })
+      ) {
+        pushStep(
+          steps,
+          'reasoning',
+          `Skipped repeated web_research request for ${decision.toolName}; identical successful result already exists.`
+        );
+        pushStep(steps, 'final', 'Repeated web research request skipped; finalizing from existing results.');
         break;
       }
 

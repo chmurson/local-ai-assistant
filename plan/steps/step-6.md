@@ -69,11 +69,23 @@ This step should turn that drift into a deliberate architecture.
 - Decide how much of this should be generalized before the first real MCP integration lands.
 - Decide how the future in-repo MCP client should expose external capabilities to the main agent without leaking large raw payloads.
 
+## Metrics / Evaluation
+
+Working metrics for `web_research`, including baseline snapshots and slice-by-slice comparisons, are tracked in `docs/web-research-metrics.md`.
+
+Current direction of travel for Step 6 should be judged mainly by:
+
+- fewer `web_research` calls per trace
+- better `query` vs `page` split
+- lower `page` fallback rate
+- only then lower overall step count
+
 ## Relevant Files
 
 - `scripts/setup-web-search-mcp.sh`
 - `scripts/run-web-search-mcp.sh`
 - `docs/web-search-mcp-setup.md`
+- `docs/web-research-metrics.md`
 - `src/core/mcp-web-search-client.ts`
 - `src/tools/web-research.ts`
 - `src/core/tool-runner.ts`
