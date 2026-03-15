@@ -75,6 +75,8 @@ Expected startup logs:
 3. Verify stdout contains user message, assistant answer, trace ID, and meta score.
 4. Send a message from another account/chat and confirm no reply + rejection log.
 
+For the difference between direct `core smoke` and transport-level `manual e2e`, see `docs/testing-checklist.md`.
+
 ## Notes
 
 - Long polling does not require public HTTPS.

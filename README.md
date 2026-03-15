@@ -68,3 +68,4 @@ Instalacja trafia do nietrackowanego katalogu `.external-tools/`, a bootstrap po
 - `/exit`
 
 Metryki i historia zmian dla `web_research` sa opisane w `docs/web-research-metrics.md`.
+Checklist rozdzielajacy `core smoke` od recznego `manual e2e` jest w `docs/testing-checklist.md`.
