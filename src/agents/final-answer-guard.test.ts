@@ -46,3 +46,12 @@ test('detectInternalDecisionLeak ignores text that merely contains braces', () =
   assert.equal(result.leaked, false);
   assert.equal(result.recoveredFinalAnswer, undefined);
 });
+
+test('detectInternalDecisionLeak detects raw tool-call markup leaks', () => {
+  const result = detectInternalDecisionLeak(
+    '<|tool_call_start|>[{"name":"web_research","arguments":{"query":"weather Ciechocinek"}}]<|tool_call_end|>[web_search(query="weather Ciechocinek")]<|tool_call_end|>'
+  );
+
+  assert.equal(result.leaked, true);
+  assert.equal(result.recoveredFinalAnswer, undefined);
+});

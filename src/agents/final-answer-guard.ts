@@ -16,10 +16,27 @@ function tryParseJsonObject(text: string): unknown | null {
   }
 }
 
+function looksLikeRawToolCallLeak(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.includes('<|tool_call_start|>') ||
+    normalized.includes('<|tool_call_end|>') ||
+    /\[(web_research|web_search|http_fetch|read_file|write_file|list_files|extract_text)\s*\(/i.test(normalized)
+  );
+}
+
 export function detectInternalDecisionLeak(text: string): {
   leaked: boolean;
   recoveredFinalAnswer?: string;
 } {
+  if (looksLikeRawToolCallLeak(text)) {
+    return { leaked: true };
+  }
+
   const parsed = tryParseJsonObject(text);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { leaked: false };
